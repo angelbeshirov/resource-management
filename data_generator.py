@@ -2,6 +2,8 @@ import numpy as np
 
 
 class DataGenerator:
+
+    # Initializes the parameters of the data generator
     def __init__(self, parameters):
         self.number_resources = parameters.number_resources
         self.t = parameters.t
@@ -22,6 +24,10 @@ class DataGenerator:
         self.other_resource_lower_limit = 0.05 * self.r
         self.other_resource_upper_limit = 0.1 * self.r
 
+        self.jobs_simulation_length = parameters.jobs_simulation_length
+        self.job_rate = parameters.job_rate
+
+    # Generates a single job
     def generate_job(self):
         # generate time requirement of the job
         if np.random.rand() < self.small_jobs_probability:  # small job
@@ -42,3 +48,20 @@ class DataGenerator:
                                                                 self.other_resource_upper_limit + 1)
 
         return duration, resource_requirements
+
+    # A sequence of jobs is generated according to a Bernoulli process
+    def generate_sequence(self):
+        np.random.seed(18)
+
+        durations = np.zeros(self.jobs_simulation_length, dtype=int)
+        resources_requirements = np.zeros((self.jobs_simulation_length, self.number_resources), dtype=int)
+
+        for k in range(self.jobs_simulation_length):
+            if np.random.rand() < self.job_rate:  # a new job comes for scheduling
+                durations[k], resources_requirements[k, :] = self.generate_job()
+
+
+        # Some of the elements will have a duration of 0 and resource requirements of 0, 
+        # because of the Bernoulli process
+        return durations, resources_requirements
+

@@ -12,7 +12,7 @@ def main():
     for k in range(5):
         duration, resource_requirements = data_generator.generate_job()
         print("Job %s generated with duration %s and resource requiremenets:" % (k, duration))
-        print(resource_requirements[0])
+        print(resource_requirements)
 
 if __name__ == '__main__':
     main()
