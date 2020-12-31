@@ -8,11 +8,12 @@ def main():
     np.set_printoptions(precision=5)
     parameters = par.Parameters()
     data_generator = dg.DataGenerator(parameters)
+    durations, resources_requirements = data_generator.generate_sequence()
 
-    for k in range(5):
-        duration, resource_requirements = data_generator.generate_job()
-        print("Job %s generated with duration %s and resource requiremenets:" % (k, duration))
-        print(resource_requirements)
+    t = 1
+    for duration, resource_requirement in zip(durations, resources_requirements):
+        print("Job %d has duration %d and resource requirements:" % (t, duration))
+        print(resource_requirement)
 
 if __name__ == '__main__':
     main()

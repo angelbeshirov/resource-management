@@ -24,7 +24,7 @@ class DataGenerator:
         self.other_resource_lower_limit = 0.05 * self.r
         self.other_resource_upper_limit = 0.1 * self.r
 
-        self.jobs_simulation_length = parameters.jobs_simulation_length
+        self.jobs_sequence_length = parameters.jobs_sequence_length
         self.job_rate = parameters.job_rate
 
     # Generates a single job
@@ -53,10 +53,10 @@ class DataGenerator:
     def generate_sequence(self):
         np.random.seed(18)
 
-        durations = np.zeros(self.jobs_simulation_length, dtype=int)
-        resources_requirements = np.zeros((self.jobs_simulation_length, self.number_resources), dtype=int)
+        durations = np.zeros(self.jobs_sequence_length, dtype=int)
+        resources_requirements = np.zeros((self.jobs_sequence_length, self.number_resources), dtype=int)
 
-        for k in range(self.jobs_simulation_length):
+        for k in range(self.jobs_sequence_length):
             if np.random.rand() < self.job_rate:  # a new job comes for scheduling
                 durations[k], resources_requirements[k, :] = self.generate_job()
 
