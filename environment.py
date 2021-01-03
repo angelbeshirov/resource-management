@@ -45,14 +45,14 @@ class ResourceManagementEnv:
         
         if allocation:
             self.log("Job (id: %d, length: %d, res_vec: %s) has started running" % \
-                (new_job.id, new_job.length, np.array2string(new_job.resource_vector)))
+                (self.job_queue[action].id, self.job_queue[action].length, np.array2string(self.job_queue[action].resource_vector)))
             # remove the job from the queue
             self.job_queue[action] = None
             # deque from job backlog
             if not self.job_backlog.empty():
                 self.job_queue[action] = self.job_backlog.dequeue()
                 self.log("Job (id: %d, length: %d, res_vec: %s) is added to queue (from backlog)" % \
-                    (new_job.id, new_job.length, np.array2string(new_job.resource_vector)))
+                    (self.job_queue[action].id, self.job_queue[action].length, np.array2string(self.job_queue[action].resource_vector)))
         else:
             self.current_time += 1
             self.machine.time_proceed(self.current_time)
@@ -99,6 +99,7 @@ class ResourceManagementEnv:
             if job is not None:
                 reward += self.hold_penalty / float(job.length)
         reward += self.job_backlog.calc_panalty(self.dismiss_penalty)
+        return reward
         
 
     def done(self):

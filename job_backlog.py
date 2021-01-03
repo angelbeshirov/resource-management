@@ -35,3 +35,4 @@ class JobBacklog:
         penalty = 0
         for i in range(self.num_jobs):
             penalty += dismiss_penalty / float(self.backlog[i].length)
+        return penalty
