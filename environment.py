@@ -57,8 +57,6 @@ class ResourceManagementEnv:
             self.current_time += 1
             self.machine.time_proceed(self.current_time)
 
-            # go to next job from sequence
-            self.seq_idx += 1
             # check whether to proceed
             done = self.done()
             
@@ -81,6 +79,8 @@ class ResourceManagementEnv:
                             self.log("Adding job (id: %d, length: %d, res_vec: %s) to backlog" % \
                                     (new_job.id, new_job.length, np.array2string(new_job.resource_vector)))
                             self.job_backlog.enqueue(new_job)
+            # go to next job from sequence
+            self.seq_idx += 1
             reward = self.reward()
          
         if done:
@@ -124,9 +124,9 @@ class ResourceManagementEnv:
 
     def render(self):
         # TODO: improve rendering (axis labels, titles, etc)
-        fig = plt.figure()
+        fig = plt.figure("screen", figsize=(20, 6))
         rows = self.machine.number_resources
-        cols = len(self.job_queue) + 1 # in one row display current resource, queue slots
+        cols = len(self.job_queue) + 1 + 1 # in one row display current resource, queue slots
         # TODO: add backlog display
 
         idx = 1
@@ -148,6 +148,14 @@ class ResourceManagementEnv:
                 plt.title('Job slot %d' % (j+1))
                 idx += 1
                 plt.imshow(slot_grid, interpolation='nearest', vmax=1)
+            if i == 0: # show backlog only on the first line
+                backlog_grid = np.zeros((self.job_backlog.size, 1))
+                for b in range(self.job_backlog.num_jobs):
+                    backlog_grid[b, 0] = 1
+                plt.subplot(rows, cols, idx)
+                plt.title('Backlog')
+                plt.imshow(backlog_grid, interpolation='nearest', vmax=1)
+            idx += 1
         plt.show()
 
 

@@ -9,7 +9,10 @@ class JobBacklog:
         self.num_jobs = 0 # number of valid jobs in the backlog
 
     def empty(self):
-        return self.backlog[0] == None
+        return self.num_jobs == 0
+
+    def front(self):
+        return self.backlog[0]
     
     # Removes job from backlog and returns it
     # Returns None if backlog is empty

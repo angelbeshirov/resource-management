@@ -1,3 +1,3 @@
 #!/bin/sh
 
-python runner.py # will add options here later on
+python3 runner.py # will add options here later on

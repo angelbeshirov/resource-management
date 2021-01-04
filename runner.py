@@ -22,8 +22,8 @@ def main():
     env.render()
     work_sequences = env.generate_work_sequences()
     job_lengths = np.array([[job.length if job is not None else 0 for job in seq] for seq in work_sequences], dtype=int)
-    job_lengths = job_lengths.flatten()
     print(job_lengths)
+    job_lengths = job_lengths.flatten()
 
     plt.hist(job_lengths)
     plt.title("Job lengths distribution")
