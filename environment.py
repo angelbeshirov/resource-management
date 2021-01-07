@@ -1,12 +1,14 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import math
+
 from enum import Enum
 from parameters import Parameters
 from machine import Machine
 from data_generator import DataGenerator
 from job import Job
 from job_backlog import JobBacklog
-
+# TODO: Add method/class description
 class TerminationType(Enum):
     NoNewJob = 1    # terminate when sequence is empty
     AllJobsDone = 2 # terminate when sequence is empty and no jobs are running
@@ -20,19 +22,32 @@ class ResourceManagementEnv:
         self.current_time = 0
         self.to_render = to_render
         self.verbose = verbose
+
+        self.number_resources = parameters.number_resources
+        self.input_height = parameters.input_height
+        self.input_width = parameters.input_width
+        self.max_resource_slots = parameters.max_resource_slots
+        self.work_queue_size = parameters.work_queue_size
+        self.backlog_size = parameters.backlog_size
+        self.time_horizon = parameters.time_horizon
+
         self.data_generator = DataGenerator(parameters)
         self.job_queue = np.full(parameters.work_queue_size, None)
-        self.job_backlog = JobBacklog(parameters.backlog_size)
+
+        # TODO: Might be good to initialize all Objects by passing the parameters object in the constructor
+        # and then each object picks up whatever it needs from there
+        self.job_backlog = JobBacklog(parameters.backlog_size) 
         self.termination_type = termination_type
         self.episode_max_length = parameters.episode_max_length
         self.machine = Machine(parameters.number_resources, \
             parameters.max_resource_slots,                  \
             parameters.time_horizon)
-        self.work_sequences = self.generate_work_sequences()
+        self.work_sequences = self.generate_work_sequences() # Should this be generated each time?
         
         self.delay_penalty = parameters.delay_penalty
         self.hold_penalty = parameters.hold_penalty
         self.dismiss_penalty = parameters.dismiss_penalty
+        self.actions = range(self.work_queue_size + 1) # +1 for the empty action
         
     def step(self, action):
         reward = 0
@@ -64,10 +79,11 @@ class ResourceManagementEnv:
                 # check if sequence is completed
                 if self.seq_idx < self.job_sequence_length:
                     new_job = self.work_sequences[self.seq_number, self.seq_idx]
-                    new_job.set_enter_time(self.current_time)
                     added_to_queue = False
 
                     if new_job is not None: # check if job is valid
+                        new_job.set_enter_time(self.current_time)
+
                         for i in range(len(self.job_queue)):
                             if self.job_queue[i] is None:   # empty slot in the queue
                                 self.job_queue[i] = new_job # put the new job in that slot
@@ -79,9 +95,12 @@ class ResourceManagementEnv:
                             self.log("Adding job (id: %d, length: %d, res_vec: %s) to backlog" % \
                                     (new_job.id, new_job.length, np.array2string(new_job.resource_vector)))
                             self.job_backlog.enqueue(new_job)
+                    else: self.log("Skipping invalid job from job sequence.")
             # go to next job from sequence
             self.seq_idx += 1
             reward = self.reward()
+
+        state = self.retrieve_state()
          
         if done:
             # we are done with current sequence
@@ -89,7 +108,7 @@ class ResourceManagementEnv:
             self.seq_number = (self.seq_number + 1) % self.simulation_length
             self.reset()
         
-        return reward, done
+        return state, reward, done
 
     
     def reward(self):
@@ -121,10 +140,11 @@ class ResourceManagementEnv:
         self.seq_idx = 0
         self.current_time = 0
         self.machine.reset()
+        self.job_queue = np.full(self.work_queue_size, None)
+        self.job_backlog = JobBacklog(self.backlog_size) 
 
     def render(self):
         # TODO: improve rendering (axis labels, titles, etc)
-        fig = plt.figure("screen", figsize=(20, 6))
         rows = self.machine.number_resources
         cols = len(self.job_queue) + 1 + 1 # in one row display current resource, queue slots
         # TODO: add backlog display
@@ -158,11 +178,12 @@ class ResourceManagementEnv:
             idx += 1
         plt.show()
 
-
-    # Generates work sequences
-    # Output: @simulation_length x @job_sequence_length array of type Job
-    # TODO: each sequence seems to be the same, is this expected behaviour?
     def generate_work_sequences(self):
+        """
+        Generates work sequences
+        Output: @simulation_length x @job_sequence_length array of type Job
+        """
+        counter = 1
         work_sequences = np.full((self.simulation_length, self.job_sequence_length), None, dtype=object)
         for i in range(self.simulation_length):
             job_lengths, job_resource_vectors = self.data_generator.generate_sequence()
@@ -171,9 +192,48 @@ class ResourceManagementEnv:
                 if job_lengths[j] > 0:
                     work_sequences[i, j] = Job(job_resource_vectors[j], \
                         job_lengths[j],                                 \
-                        id=(i + 1) * (j + 1)) # TODO: better way to generate id
+                        id=counter)
+                    counter = counter + 1
         return work_sequences
 
+    # Current state shape is: 60x301
+    def retrieve_state(self):
+        """
+        Construct the state of the environment, used as input to the neural network policy during training.
+        Note: The backlog representation should be in a format suitable for the neural network, which means
+        to be of shape time_horizonXsomething. To achieve this we divide the backlog size to the time_horizon.
+        This keeps the first dimension fixed regardless of the backlog size.
+        """
+        backlog_width = int(math.ceil(self.backlog_size / float(self.time_horizon))) 
+        state = np.zeros((self.input_height, self.input_width))
+
+        column_iterator = 0
+
+        for i in range(self.number_resources):
+            state[:, column_iterator: column_iterator + self.max_resource_slots] = self.machine.canvas[i, :, :]
+            column_iterator += self.max_resource_slots
+
+            for j in range(self.work_queue_size):
+
+                if self.job_queue[j] is not None:  # fill in a block of work if valid
+                    state[: self.job_queue[j].length, \
+                        column_iterator: column_iterator + self.job_queue[j].resource_vector[i]] = 1
+
+                column_iterator += self.max_resource_slots
+
+        state[: int(self.job_backlog.num_jobs / backlog_width), column_iterator: column_iterator + backlog_width] = 1
+        if self.job_backlog.num_jobs % backlog_width > 0:
+            state[self.job_backlog.num_jobs / backlog_width,
+                       column_iterator: column_iterator + self.job_backlog.num_jobs % backlog_width] = 1
+        column_iterator += backlog_width
+
+        assert column_iterator == state.shape[1]
+
+        return state
+
     def log(self, message):
+        """
+        Logs a message.
+        """
         if self.verbose:
             print(message)

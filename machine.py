@@ -18,9 +18,11 @@ class Machine:
     def reset(self):
         self.running_jobs = []
         self.canvas = np.zeros((self.number_resources, self.time_horizon, self.resource_slots))
+        self.available_slots = np.full((self.time_horizon, self.number_resources), self.resource_slots)
 
     def allocate_job(self, job, current_time):
-        # TODO: can job length be greater than time_horizon ?
+        # TODO: can job length be greater than time_horizon ? No, should add fragmentation either before allocation or here when allocating, but other jobs should
+        # be blocked until this job finishes entirely
         for t in range(self.time_horizon - job.length):
             # observe resources if job is executed
             new_available_slots = \
@@ -31,7 +33,7 @@ class Machine:
                 self.available_slots[t:t+job.length, :] = new_available_slots
                 # set job start and end time
                 job.set_start_time(current_time + t)
-                # append job to runnign jobs
+                # append job to running jobs
                 self.running_jobs.append(job)
                 # update graphics
                 self.update_canvas(t, t + job.length, job)
@@ -51,7 +53,7 @@ class Machine:
         # set last resource as fully available (all its slots are free)
         self.available_slots[-1, :] = self.resource_slots
 
-        # remove finished jobs from ruuning jobs list
+        # remove finished jobs from running jobs list
         for job in self.running_jobs:
             if job.finish_time <= current_time:
                 self.running_jobs.remove(job)

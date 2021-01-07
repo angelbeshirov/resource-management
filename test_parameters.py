@@ -2,7 +2,6 @@
 # fixed parameters for environment testing
 class TestParameters:
     def __init__(self):
-        self.num_epochs = 10000
         self.number_resources = 2
         self.max_resource_slots = 25    # max number of available resource slots per resource
         self.episode_max_length = 200   # maximum number of time steps in an episode

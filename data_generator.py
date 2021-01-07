@@ -50,8 +50,11 @@ class DataGenerator:
         return duration, resource_requirements
 
     # A sequence of jobs is generated according to a Bernoulli process
-    def generate_sequence(self):
-        np.random.seed(18)
+    def generate_sequence(self, debug = False):
+        if debug == True: 
+            np.random.seed(18) # Setting the seed = same random numbers every time, can be useful for debugging
+        else:
+            np.random.seed() # This will generate random numbers every time it is run
 
         durations = np.zeros(self.jobs_sequence_length, dtype=int)
         resources_requirements = np.zeros((self.jobs_sequence_length, self.number_resources), dtype=int)
