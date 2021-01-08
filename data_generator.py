@@ -3,8 +3,10 @@ import numpy as np
 
 class DataGenerator:
 
-    # Initializes the parameters of the data generator
     def __init__(self, parameters):
+        """
+        Initializes the parameters of the data generator
+        """
         self.number_resources = parameters.number_resources
         self.t = parameters.t
         self.r = parameters.r
@@ -27,8 +29,11 @@ class DataGenerator:
         self.jobs_sequence_length = parameters.jobs_sequence_length
         self.job_rate = parameters.job_rate
 
-    # Generates a single job
+    # 
     def generate_job(self):
+        """
+        Generates a single job with the initialized parameters.
+        """
         # generate time requirement of the job
         if np.random.rand() < self.small_jobs_probability:  # small job
             duration = np.random.randint(self.small_jobs_lower_time_limit, self.small_jobs_upper_time_limit + 1)
@@ -49,8 +54,10 @@ class DataGenerator:
 
         return duration, resource_requirements
 
-    # A sequence of jobs is generated according to a Bernoulli process
     def generate_sequence(self, debug = False):
+        """
+        Generate a sequence of jobs according to a Bernoulli process.
+        """
         if debug == True: 
             np.random.seed(18) # Setting the seed = same random numbers every time, can be useful for debugging
         else:

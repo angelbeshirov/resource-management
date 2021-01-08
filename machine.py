@@ -2,27 +2,38 @@ import numpy as np
 from job import Job
 
 class Machine:
+    """
+    Class representing the cluster/machine which executes the jobs.
+    """
     def __init__(self, number_resources, resource_slots, time_horizon):
-        self.number_resources = number_resources
+        self.number_resources = number_resources # number of resources in the machine
         self.resource_slots = resource_slots     # number of slots per resource
+        self.time_horizon = time_horizon         # number of observable time steps
 
         self.running_jobs = [] # TODO: find the best structure for our problem (maybe list?)
-        self.time_horizon = time_horizon
         self.available_slots = np.full((time_horizon, number_resources), resource_slots)
 
         # graphical representation
         self.colormap = np.arange(1 / float(40), 1, 1 / float(40))
-        np.random.shuffle(self.colormap)
         self.canvas = np.zeros((self.number_resources, self.time_horizon, self.resource_slots))
 
+        np.random.shuffle(self.colormap)
+
     def reset(self):
+        """
+        Resets the machine to its initial state.
+        """
         self.running_jobs = []
         self.canvas = np.zeros((self.number_resources, self.time_horizon, self.resource_slots))
         self.available_slots = np.full((self.time_horizon, self.number_resources), self.resource_slots)
 
     def allocate_job(self, job, current_time):
-        # TODO: can job length be greater than time_horizon ? No, should add fragmentation either before allocation or here when allocating, but other jobs should
-        # be blocked until this job finishes entirely
+        """
+        Tries to allocate a job if in the machine. The job must be with length not greater than the 
+        observable time steps in the machine. If there are not enough resources currently in the machine 
+        i.e. the job was not successfully allocated False will be returned, otherwise True.
+        Future improvement can be to add job fragmentation.
+        """
         for t in range(self.time_horizon - job.length):
             # observe resources if job is executed
             new_available_slots = \
@@ -41,6 +52,9 @@ class Machine:
         return False
 
     def update_canvas(self, start_time, end_time, job):
+        """
+        Updates the canvas for rendering the machine state.
+        """
         color = self.get_unused_color()
         for r in range(self.number_resources):
             for i in range(start_time, end_time):
@@ -48,6 +62,9 @@ class Machine:
                 self.canvas[r, i, available_slot[:job.resource_vector[r]]] = color
 
     def time_proceed(self, current_time):
+        """
+        Moves the machine 1 time step further and updates the variables.
+        """
         # move slots 1 position back (one time step passed)
         self.available_slots[:-1, :] = self.available_slots[1:, :]
         # set last resource as fully available (all its slots are free)
@@ -63,12 +80,19 @@ class Machine:
         self.canvas[:, -1, :] = 0
 
     def calc_delay_panalty(self, delay_panalty):
+        """
+        The penalty is the sum of all -1/T_j where T_j is the length of 
+        job currently in the system.
+        """
         reward = 0
         for job in self.running_jobs:
             reward += delay_panalty / float(job.length)
         return reward
 
     def get_unused_color(self):
+        """
+        Returns the first unused color.
+        """
         used_colors = np.unique(self.canvas)
         for color in self.colormap:
             if color not in used_colors:

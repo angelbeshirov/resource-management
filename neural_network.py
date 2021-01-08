@@ -3,23 +3,21 @@ import numpy as np
 import time
 import itertools
 
-from jax import random
 from jax.experimental import stax 
 from jax.experimental.stax import Dense, Relu, LogSoftmax
-from jax import grad
 from jax.tree_util import tree_flatten
-
 from jax.experimental import optimizers # gradient descent optimizers
-from jax import jit
 
-import numpy as np
+from jax import jit
+from jax import grad
+from jax import random
+
 from parameters import Parameters
 from data_generator import DataGenerator
 from environment import ResourceManagementEnv
 
 class Neural_network:
     def __init__(self, parameters):
-        self.current_time = 0
         self.seed = 0
         self.number_episodes = parameters.number_episodes
         self.batch_size = parameters.batch_size
@@ -35,7 +33,7 @@ class Neural_network:
         rng = random.PRNGKey(self.seed)
 
         self.initialize_params, self.predict_jax = stax.serial(
-                                            Dense(20),
+                                            Dense(20), # are the parameters really 89 451? 60*301 = 200x18060 * 18060x6 -> 200x6 * 6x1
                                             Relu,
                                             Dense(parameters.network_output_dim),
                                             LogSoftmax
@@ -50,7 +48,6 @@ class Neural_network:
 
         self.opt_state = self.opt_init(self.inital_params)
         self.step = 0
-        
 
         print('Output shape of the model is {}.\n'.format(self.output_shape))
 
@@ -88,12 +85,29 @@ class Neural_network:
         return -jnp.mean(jnp.sum(preds_select * (returns - baseline) )) + self.l2_regularizer(params, 0.001)
 
     def update(self, batch):
+        """
+        Updates the neural network parameters.
+
+        batch: np.array
+            batch containing the data used to update the model
+        """
+
+        # get current parameters of the model
         current_params = self.get_params(self.opt_state)
+
+        # compute gradients
         grad_params = grad(self.pseudo_loss)(current_params, batch)
+
+        # perform the update
         self.opt_state = self.opt_update(self.step, grad_params, self.opt_state)
+
+        # increment the step
         self.step = self.step + 1
 
     def predict(self, data):
+        """
+        Predict an action based on the data parameter.
+        """
         params = self.get_params(self.opt_state)
         return self.predict_jax(params, data)
 
@@ -122,6 +136,8 @@ class Neural_network:
     
         # mean reward at the end of the episode
         mean_final_reward = np.zeros(self.number_episodes, dtype=np.float32)
+        # total reward at the end of the episode
+        total_final_reward = np.zeros_like(mean_final_reward)
         # standard deviation of the reward at the end of the episode
         std_final_reward = np.zeros_like(mean_final_reward)
         # batch minimum at the end of the episode
@@ -146,8 +162,7 @@ class Neural_network:
             # MC sample
             for j in range(self.batch_size):
                 
-                # reset environment to a random initial state
-                #env.reset(random=False) # fixed initial state
+                # reset environment to the initial state
                 env.reset()
             
                 # zero rewards array (auxiliary array to store the rewards, and help compute the returns)
@@ -157,13 +172,13 @@ class Neural_network:
                 for time_step in range(self.episode_max_length):
 
                     # select state
-                    state = env.retrieve_state().reshape(1, -1)
+                    state = env.retrieve_state().reshape(1, -1) # Fix the shape?
                     states[j, time_step, :] = state
 
                     # select an action according to current policy
                     pi_s = np.exp(self.predict_jax(current_params, state))
                     action = np.random.choice(env.actions, p = pi_s[0])
-                    actions[j,time_step] = action
+                    actions[j,time_step] = action # batch_sizexepisode_max_length
 
                     # take an environment step
                     _ , reward, _ = env.step(action)
@@ -173,9 +188,11 @@ class Neural_network:
                     rewards[time_step] = reward
                     
                 # compute reward-to-go 
+                # e.g. rewards = 1 2 3 4
+                # rewards[::-1] = 4 3 2 1
+                # cumsum -> 4 7 9 10
+                # [::-1] -> 10 9 7 4
                 returns[j,:] = jnp.cumsum(rewards[::-1])[::-1]
-                
-                
                     
             # define batch of data
             trajectory_batch = (states, actions, returns)
@@ -188,13 +205,14 @@ class Neural_network:
             
             # check performance
             mean_final_reward[episode]=jnp.mean(returns[:,-1])
+            total_final_reward[episode] = jnp.sum(returns[:,-1])
             std_final_reward[episode] =jnp.std(returns[:,-1])
             min_final_reward[episode], max_final_reward[episode] = np.min(returns[:,-1]), np.max(returns[:,-1])
-
             
             # print results every 10 epochs
             #if episode % 5 == 0:
             print("episode {} in {:0.2f} sec".format(episode, episode_time))
-            print("mean reward: {:0.4f}".format(mean_final_reward[episode]) )
-            print("return standard deviation: {:0.4f}".format(std_final_reward[episode]) )
-            print("min return: {:0.4f}; max return: {:0.4f}\n".format(min_final_reward[episode], max_final_reward[episode]) )
+            print("total reward: {:0.4f}".format(total_final_reward[episode]))
+            print("mean reward: {:0.4f}".format(mean_final_reward[episode]))
+            print("return standard deviation: {:0.4f}".format(std_final_reward[episode]))
+            print("min return: {:0.4f}; max return: {:0.4f}\n".format(min_final_reward[episode], max_final_reward[episode]))
