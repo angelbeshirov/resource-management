@@ -27,8 +27,8 @@ class TestParameters:
         self.eps = 1e-8                 # the eps parameter for RMSProp
 
         # self.discount = 1
-        self.number_episodes = 200     # number of episodes
-        self.batch_size = 64           # the batch size
+        self.number_episodes = 3     # number of episodes
+        self.batch_size = 20         # the batch size
 
         # Network parameters
         self.backlog_width = int(math.ceil(self.backlog_size \

@@ -5,6 +5,8 @@ import numpy as np
 import pytest
 import copy
 
+from logger import LogLevel, Logger
+
 def generate_work_sequence():
     job_lengths = np.array([3, 8, 50, 20, 11, 1, 5, 55, 2, 7])
     job_resource_vectors = np.array([
@@ -30,7 +32,7 @@ def generate_work_sequence():
 
 def test_environment():
     params = pa.TestParameters()
-    env = ResourceManagementEnv(params, True, termination_type=TerminationType.AllJobsDone)
+    env = ResourceManagementEnv(params, logger=Logger(LogLevel.debug), to_render=True, termination_type=TerminationType.AllJobsDone)
     env.work_sequences = generate_work_sequence()
     for i in range(params.work_queue_size):
         _, _,  done = env.step(i)

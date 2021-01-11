@@ -1,17 +1,18 @@
 import numpy as np
+from logger import Logger, LogLevel
 
 class Job:
     """
     Class representing the a job in the system.
     """
-    def __init__(self, resource_vector, length, id, debug=False):
+    def __init__(self, resource_vector, length, id, logger = Logger(LogLevel['info'])):
         self.resource_vector = resource_vector
         self.length = length
         self.id = id
         self.enter_time = -1
         self.start_time = -1
         self.finish_time = -1
-        self.debug = debug
+        self.logger = logger
 
     def set_start_time(self, start_time):
         """
@@ -20,8 +21,7 @@ class Job:
         """
         self.start_time = start_time
         self.finish_time = self.start_time + self.length
-        if self.debug == True:
-            print("Start time %d, Finish time %d" % (self.start_time, self.finish_time))
+        self.logger.debug("Start time %d, Finish time %d" % (self.start_time, self.finish_time))
 
     def set_enter_time(self, time):
         """

@@ -3,6 +3,8 @@ import numpy as np
 import time
 import itertools
 
+from sys import maxsize
+
 from jax.experimental import stax 
 from jax.experimental.stax import Dense, Relu, LogSoftmax
 from jax.tree_util import tree_flatten
@@ -15,9 +17,12 @@ from jax import random
 from parameters import Parameters
 from data_generator import DataGenerator
 from environment import ResourceManagementEnv
+from logger import Logger, LogLevel
+
+import pickle
 
 class Neural_network:
-    def __init__(self, parameters):
+    def __init__(self, parameters, env, logger = Logger(LogLevel['info'])):
         self.seed = 0
         self.number_episodes = parameters.number_episodes
         self.batch_size = parameters.batch_size
@@ -30,17 +35,21 @@ class Neural_network:
         self.eps = parameters.eps
         self.gamma = parameters.gamma
 
+        self.env = env
+        self.logger = logger
+
         rng = random.PRNGKey(self.seed)
 
         self.initialize_params, self.predict_jax = stax.serial(
-                                            Dense(20), # are the parameters really 89 451? 60*301 = 200x18060 * 18060x6 -> 200x6 * 6x1
+                                            Dense(20),
                                             Relu,
                                             Dense(parameters.network_output_dim),
                                             LogSoftmax
         )
-
-        input_shape = (-1, self.episode_max_length, self.input_height * self.input_width)
-        self.output_shape, self.inital_params = self.initialize_params(rng, input_shape)
+        
+        # process simultaneously all time steps and MC samples, generated in a single training iteration
+        self.input_shape = (-1, self.episode_max_length, self.input_height * self.input_width) 
+        self.output_shape, self.inital_params = self.initialize_params(rng, self.input_shape)
 
         self.opt_init, self.opt_update, self.get_params = \
             optimizers.rmsprop(step_size = self.learning_rate, gamma = self.gamma, eps = self.eps)
@@ -49,7 +58,7 @@ class Neural_network:
         self.opt_state = self.opt_init(self.inital_params)
         self.step = 0
 
-        print('Output shape of the model is {}.\n'.format(self.output_shape))
+        self.logger.info('Output shape of the model is {}.\n'.format(self.output_shape))
 
     def l2_regularizer(self, params, lmbda):
         """
@@ -126,7 +135,9 @@ class Neural_network:
     #   end
     # end
     # θ ← θ + ∆θ % batch parameter update
-    def train(self, env):
+    def train(self):
+        best_reward = -maxsize
+
         # preallocate data using arrays initialized with zeros
         state=np.zeros((self.input_height * self.input_width,), dtype=np.float32)
     
@@ -145,7 +156,7 @@ class Neural_network:
         # batch maximum at the end of the episode
         max_final_reward = np.zeros_like(mean_final_reward)
 
-        print("\nStarting training...\n")
+        self.logger.info("\nStarting training...\n")
 
         # set the initial model parameters in the optimizer
         self.opt_state = self.opt_init(self.inital_params)
@@ -162,26 +173,35 @@ class Neural_network:
             # MC sample
             for j in range(self.batch_size):
                 
+                self.logger.debug("Monte carlo simulation %d started!" % (j))
                 # reset environment to the initial state
-                env.reset()
+                self.env.reset()
             
                 # zero rewards array (auxiliary array to store the rewards, and help compute the returns)
                 rewards = np.zeros((self.episode_max_length, ), dtype=np.float32)
-            
+
                 # loop over steps in an episode
                 for time_step in range(self.episode_max_length):
 
                     # select state
-                    state = env.retrieve_state().reshape(1, -1) # Fix the shape?
+                    state = self.env.retrieve_state().reshape(1, -1) # Fix the shape?
                     states[j, time_step, :] = state
 
                     # select an action according to current policy
                     pi_s = np.exp(self.predict_jax(current_params, state))
-                    action = np.random.choice(env.actions, p = pi_s[0])
+                    action = np.random.choice(self.env.actions, p = pi_s[0])
                     actions[j,time_step] = action # batch_sizexepisode_max_length
 
                     # take an environment step
-                    _ , reward, _ = env.step(action)
+                    _ , reward, done = self.env.step(action)
+
+                    # If everything is executed the rest of the rewards will be 0
+                    # which is exactly the expected behaviur since the environment
+                    # only returns negative rewards (-1/T_j)
+                    if done:
+                        #env.log("No more jobs in the environment, everything is executed.")
+                        self.logger.info("No more jobs in the environment, everything is executed.")
+                        break
                     # state[:] = s.reshape([1, -1])
 
                     # store reward
@@ -208,11 +228,39 @@ class Neural_network:
             total_final_reward[episode] = jnp.sum(returns[:,-1])
             std_final_reward[episode] =jnp.std(returns[:,-1])
             min_final_reward[episode], max_final_reward[episode] = np.min(returns[:,-1]), np.max(returns[:,-1])
-            
+
+            if total_final_reward[episode] >= best_reward:
+                self.logger.info("Saving new best model with reward %d in episode %d" % (total_final_reward[episode], episode))
+                self.save("./best_model.pkl", self.env)
+                best_reward = total_final_reward[episode]
+
             # print results every 10 epochs
             #if episode % 5 == 0:
-            print("episode {} in {:0.2f} sec".format(episode, episode_time))
-            print("total reward: {:0.4f}".format(total_final_reward[episode]))
-            print("mean reward: {:0.4f}".format(mean_final_reward[episode]))
-            print("return standard deviation: {:0.4f}".format(std_final_reward[episode]))
-            print("min return: {:0.4f}; max return: {:0.4f}\n".format(min_final_reward[episode], max_final_reward[episode]))
+            self.logger.info("episode {} in {:0.2f} sec".format(episode, episode_time))
+            self.logger.info("total reward: {:0.4f}".format(total_final_reward[episode]))
+            self.logger.info("mean reward: {:0.4f}".format(mean_final_reward[episode]))
+            self.logger.info("return standard deviation: {:0.4f}".format(std_final_reward[episode]))
+            self.logger.info("min return: {:0.4f}; max return: {:0.4f}\n".format(min_final_reward[episode], max_final_reward[episode]))
+
+    def save(self, path, env):
+        """
+        Saves the model parameters into the specified file.
+        """
+        trained_params = self.get_params(self.opt_state)
+        file = open(path, 'wb')
+        pickle.dump(trained_params, file, -1)
+        file.close()
+
+    def load(self, path, env):
+        """
+        Loads the model parameters from the specified file.
+        """
+        self.logger.info("Loading model from %s" % (path))
+        file = open(path, 'rb')
+        params = pickle.load(file)
+
+        # self.initialize_params(saved_params, self.input_shape)
+        self.opt_state = self.opt_init(params)
+
+
+

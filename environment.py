@@ -8,6 +8,7 @@ from machine import Machine
 from data_generator import DataGenerator
 from job import Job
 from job_backlog import JobBacklog
+from logger import Logger, LogLevel
 
 class TerminationType(Enum):
     NoNewJob = 1    # terminate when sequence is empty
@@ -18,13 +19,12 @@ class ResourceManagementEnv:
     Represents the environment containing all the jobs and performing 
     the actions(job scheduling) through which the agent interacts with it.
     """
-    def __init__(self, parameters, to_render = False, termination_type = TerminationType.NoNewJob, verbose = True):
+    def __init__(self, parameters, logger = Logger(LogLevel['info']), to_render = False, termination_type = TerminationType.NoNewJob):
         self.seq_number = 0         # index of current exemple sequence
         self.seq_idx = 0            # index in the current example sequence
         self.current_time = 0       # current system time
 
         self.to_render = to_render
-        self.verbose = verbose
         self.termination_type = termination_type
 
         self.job_sequence_length = parameters.jobs_sequence_length
@@ -44,6 +44,7 @@ class ResourceManagementEnv:
 
         self.data_generator = DataGenerator(parameters)
         self.job_queue = np.full(self.work_queue_size, None)
+        self.logger = logger
 
         # TODO: Might be good to initialize all Objects by passing the parameters object in the constructor
         # and then each object picks up whatever it needs from there
@@ -71,16 +72,16 @@ class ResourceManagementEnv:
         # check if action is valid
         if action < len(self.job_queue) and self.job_queue[action] is not None:
             allocation = self.machine.allocate_job(self.job_queue[action], self.current_time)
-        
+
         if allocation:
-            self.log("Job (id: %d, length: %d, res_vec: %s) has started running" % \
+            self.logger.debug("Job (id: %d, length: %d, res_vec: %s) has started running" % \
                 (self.job_queue[action].id, self.job_queue[action].length, np.array2string(self.job_queue[action].resource_vector)))
             # remove the job from the queue
             self.job_queue[action] = None
             # deque from job backlog
             if not self.job_backlog.empty():
                 self.job_queue[action] = self.job_backlog.dequeue()
-                self.log("Job (id: %d, length: %d, res_vec: %s) is added to queue (from backlog)" % \
+                self.logger.debug("Job (id: %d, length: %d, res_vec: %s) is added to queue (from backlog)" % \
                     (self.job_queue[action].id, self.job_queue[action].length, np.array2string(self.job_queue[action].resource_vector)))
         else:
             self.current_time += 1
@@ -102,14 +103,14 @@ class ResourceManagementEnv:
                             if self.job_queue[i] is None:   # empty slot in the queue
                                 self.job_queue[i] = new_job # put the new job in that slot
                                 added_to_queue = True
-                                self.log("Adding job (id: %d, length: %d, res_vec: %s) to queue" % \
+                                self.logger.debug("Adding job (id: %d, length: %d, res_vec: %s) to queue" % \
                                     (new_job.id, new_job.length, np.array2string(new_job.resource_vector)))
                                 break
                         if not added_to_queue:
-                            self.log("Adding job (id: %d, length: %d, res_vec: %s) to backlog" % \
+                            self.logger.debug("Adding job (id: %d, length: %d, res_vec: %s) to backlog" % \
                                     (new_job.id, new_job.length, np.array2string(new_job.resource_vector)))
                             self.job_backlog.enqueue(new_job)
-                    else: self.log("Skipping invalid job from job sequence.")
+                    else: self.logger.debug("Skipping invalid job from job sequence.")
             # go to next job from sequence
             self.seq_idx += 1
             reward = self.reward()
@@ -256,10 +257,3 @@ class ResourceManagementEnv:
         assert column_iterator == state.shape[1]
 
         return state
-
-    def log(self, message):
-        """
-        Logs a message.
-        """
-        if self.verbose:
-            print(message)

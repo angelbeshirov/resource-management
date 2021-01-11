@@ -1,43 +1,30 @@
 import numpy as np
+import argparse
 import matplotlib.pyplot as plt
 
-import parameters as par
-import data_generator as dg
 from environment import ResourceManagementEnv
+from parameters import Parameters
+from data_generator import DataGenerator
+from neural_network import Neural_network
 from job import Job
+from logger import LogLevel, Logger
+
 
 
 def main():
     np.set_printoptions(precision=5)
-    parameters = par.Parameters()
-    # simple environment test execute several step and observe bahaviour
-    env = ResourceManagementEnv(parameters, True)
-    env.step(0)
-    env.render()
-    env.step(1)
-    env.render()
-    env.step(0)
-    env.render()
-    env.step(1)
-    env.render()
-    work_sequences = env.generate_work_sequences()
-    job_lengths = np.array([[job.length if job is not None else 0 for job in seq] for seq in work_sequences], dtype=int)
-    print(job_lengths)
-    job_lengths = job_lengths.flatten()
+    parameters = Parameters()
 
-    plt.hist(job_lengths)
-    plt.title("Job lengths distribution")
-    plt.xlabel("Job length")
-    plt.show()
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("-t", "--train", action="store_true", help="If true the training starts.")
+    parser.add_argument("-l", "--loglevel", type=str, default="info", choices=['debug', 'info'], help="Log level to be used.")
+    args = parser.parse_args()
 
-    # for i in range(work_sequences.shape[0]):
-    #     for j, job in enumerate(work_sequences[i]):
-    #         if job is not None:
-    #             print("Job id: %d, duration: %d, resource vector: " % (job.id, job.length))
-    #             print(job.resource_vector)
-    #         else:
-    #             print("Job %d is None" % ((i+1) * (j+1)))
-
+    if args.train:
+        logger = Logger(LogLevel[args.loglevel])
+        env = ResourceManagementEnv(parameters, logger)
+        neural_net = Neural_network(parameters, env, logger)
+        neural_net.train()
 
 if __name__ == '__main__':
     main()
