@@ -8,8 +8,8 @@ import jax.numpy as jnp
 
 def main():
     parameters = Parameters()
-    neural_net = Neural_network(parameters)
-    env = ResourceManagementEnv(parameters, verbose=False)
+    env = ResourceManagementEnv(parameters)
+    neural_net = Neural_network(parameters, env)
     env.step(0)
     state1 = env.retrieve_state()
     env.step(1)
@@ -31,7 +31,7 @@ def main():
     print('conservation of probability', np.sum(jnp.exp(output), axis=1))
     print("Actions to take are {}".format(jnp.argmax(output, axis=1)))
 
-    neural_net.train(env)
+    neural_net.train()
 
 
 if __name__ == '__main__':

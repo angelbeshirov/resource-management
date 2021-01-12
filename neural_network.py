@@ -1,5 +1,6 @@
 import jax.numpy as jnp
 import numpy as np
+import matplotlib.pyplot as plt
 import time
 import itertools
 
@@ -11,7 +12,7 @@ from jax.tree_util import tree_flatten
 from jax.experimental import optimizers # gradient descent optimizers
 
 from jax import jit
-from jax import grad
+from jax import grad, value_and_grad
 from jax import random
 
 from parameters import Parameters
@@ -22,7 +23,7 @@ from logger import Logger, LogLevel
 import pickle
 
 class Neural_network:
-    def __init__(self, parameters, env, logger = Logger(LogLevel['info'])):
+    def __init__(self, parameters, env, logger = Logger(LogLevel['info']), plot_freq = 5):
         self.seed = 0
         self.number_episodes = parameters.number_episodes
         self.batch_size = parameters.batch_size
@@ -37,6 +38,7 @@ class Neural_network:
 
         self.env = env
         self.logger = logger
+        self.plot_freq = plot_freq # on how many iterations plot is updated; 0 means no plotting
 
         rng = random.PRNGKey(self.seed)
 
@@ -105,13 +107,14 @@ class Neural_network:
         current_params = self.get_params(self.opt_state)
 
         # compute gradients
-        grad_params = grad(self.pseudo_loss)(current_params, batch)
+        loss, grad_params = value_and_grad(self.pseudo_loss)(current_params, batch)
 
         # perform the update
         self.opt_state = self.opt_update(self.step, grad_params, self.opt_state)
 
         # increment the step
         self.step = self.step + 1
+        return loss
 
     def predict(self, data):
         """
@@ -155,11 +158,16 @@ class Neural_network:
         min_final_reward = np.zeros_like(mean_final_reward)
         # batch maximum at the end of the episode
         max_final_reward = np.zeros_like(mean_final_reward)
+        mean_avg_slowdowns = np.zeros(self.number_episodes, dtype=np.float32)
+        mean_avg_completion_times = np.zeros(self.number_episodes, dtype=np.float32)
 
         self.logger.info("\nStarting training...\n")
 
         # set the initial model parameters in the optimizer
         self.opt_state = self.opt_init(self.inital_params)
+
+        fig, axs = plt.subplots(2, 2, figsize=(12,8))
+        losses = []
 
         # loop over the number of training episodes
         for episode in range(self.number_episodes): 
@@ -169,6 +177,9 @@ class Neural_network:
             
             # get current policy  network params
             current_params = self.get_params(self.opt_state)
+
+            avg_slowdowns = np.zeros(self.batch_size, dtype=np.float32)
+            avg_completion_times = np.zeros(self.batch_size, dtype=np.float32)
             
             # MC sample
             for j in range(self.batch_size):
@@ -213,12 +224,15 @@ class Neural_network:
                 # cumsum -> 4 7 9 10
                 # [::-1] -> 10 9 7 4
                 returns[j,:] = jnp.cumsum(rewards[::-1])[::-1]
+                avg_slowdowns[j] = self.env.get_average_slowdown()
+                avg_completion_times[j] = self.env.get_average_completion_time()
                     
             # define batch of data
             trajectory_batch = (states, actions, returns)
             
             # update model
-            self.update(trajectory_batch)
+            loss = self.update(trajectory_batch)
+            losses.append(loss)
                     
             ### record time needed for a single epoch
             episode_time = time.time() - start_time
@@ -228,6 +242,8 @@ class Neural_network:
             total_final_reward[episode] = jnp.sum(returns[:,-1])
             std_final_reward[episode] =jnp.std(returns[:,-1])
             min_final_reward[episode], max_final_reward[episode] = np.min(returns[:,-1]), np.max(returns[:,-1])
+            mean_avg_slowdowns[episode] = jnp.mean(avg_slowdowns)
+            mean_avg_completion_times[episode] = jnp.mean(avg_completion_times)
 
             if total_final_reward[episode] >= best_reward:
                 self.logger.info("Saving new best model with reward %d in episode %d" % (total_final_reward[episode], episode))
@@ -241,6 +257,9 @@ class Neural_network:
             self.logger.info("mean reward: {:0.4f}".format(mean_final_reward[episode]))
             self.logger.info("return standard deviation: {:0.4f}".format(std_final_reward[episode]))
             self.logger.info("min return: {:0.4f}; max return: {:0.4f}\n".format(min_final_reward[episode], max_final_reward[episode]))
+
+            if self.plot_freq > 0 and episode % self.plot_freq == 0:
+                self.plot(axs, episode, total_final_reward, losses, mean_avg_slowdowns, mean_avg_completion_times)
 
     def save(self, path, env):
         """
@@ -262,5 +281,24 @@ class Neural_network:
         # self.initialize_params(saved_params, self.input_shape)
         self.opt_state = self.opt_init(params)
 
+    def plot(self, axs, episode, total_rewards, losses, avg_slowdowns, avg_completion_times):
+        episode_seq = np.arange(episode+1)
+        axs[0,0].clear()
+        axs[0,0].plot(episode_seq, total_rewards[:episode+1], '-o')
+        axs[0,0].set_title('Total reward')
+        axs[0,0].set(xlabel='Episode', ylabel='Total reward')
 
+        axs[0,1].plot(episode_seq, losses[:episode+1], '-o', color='green')
+        axs[0,1].set_title('Loss')
+        axs[0,1].set(xlabel='Episode', ylabel='Pseudo loss')
+
+        axs[1,0].plot(episode_seq, avg_slowdowns[:episode+1], '-o', color='orange')
+        axs[1,0].set_title('Average slowdown')
+        axs[1,0].set(xlabel='Episode', ylabel='Average slowdown')
+
+        axs[1,1].plot(episode_seq, avg_completion_times[:episode+1], '-o', color='red')
+        axs[1,1].set_title('Average completion time')
+        axs[1,1].set(xlabel='Episode', ylabel='Average completion time')
+
+        plt.pause(0.05)
 

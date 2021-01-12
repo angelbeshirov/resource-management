@@ -174,7 +174,6 @@ class ResourceManagementEnv:
         # TODO: improve rendering (axis labels, titles, etc)
         rows = self.machine.number_resources
         cols = len(self.job_queue) + 1 + 1 # in one row display current resource, queue slots
-        # TODO: add backlog display
 
         idx = 1
 
@@ -257,3 +256,31 @@ class ResourceManagementEnv:
         assert column_iterator == state.shape[1]
 
         return state
+
+    def get_average_slowdown(self):
+        """
+        Calculates average slowdown over all finished jobs
+        """
+        slowdowns_sum = 0
+        finished_jobs_cnt = 0
+        for seq in range(len(self.work_sequences)):
+            for job in self.work_sequences[seq]:
+                if job is not None and job.finish_time > -1 \
+                    and job.finish_time <= self.current_time:
+                    slowdowns_sum += ((job.finish_time - job.enter_time) / float(job.length))
+                    finished_jobs_cnt += 1
+        return slowdowns_sum / float(finished_jobs_cnt)
+    
+    def get_average_completion_time(self):
+        """
+        Calculates the average job completion time of all finished jobs
+        """
+        completion_times_sum = 0
+        finished_jobs_cnt = 0
+        for seq in range(len(self.work_sequences)):
+            for job in self.work_sequences[seq]:
+                if job is not None and job.finish_time > -1 \
+                    and job.finish_time <= self.current_time:
+                    completion_times_sum += (job.finish_time - job.enter_time)
+                    finished_jobs_cnt += 1
+        return completion_times_sum / float(finished_jobs_cnt)
