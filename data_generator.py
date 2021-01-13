@@ -29,7 +29,6 @@ class DataGenerator:
         self.jobs_sequence_length = parameters.jobs_sequence_length
         self.job_rate = parameters.job_rate
 
-    # 
     def generate_job(self):
         """
         Generates a single job with the initialized parameters.

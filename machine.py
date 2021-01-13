@@ -5,7 +5,7 @@ class Machine:
     """
     Class representing the cluster/machine which executes the jobs.
     """
-    def __init__(self, number_resources, resource_slots, time_horizon):
+    def __init__(self, number_resources, resource_slots, time_horizon, logger):
         self.number_resources = number_resources # number of resources in the machine
         self.resource_slots = resource_slots     # number of slots per resource
         self.time_horizon = time_horizon         # number of observable time steps
@@ -16,6 +16,7 @@ class Machine:
         # graphical representation
         self.colormap = np.arange(1 / float(40), 1, 1 / float(40))
         self.canvas = np.zeros((self.number_resources, self.time_horizon, self.resource_slots))
+        self.logger = logger
 
         np.random.shuffle(self.colormap)
 
@@ -74,6 +75,7 @@ class Machine:
         for job in self.running_jobs:
             if job.finish_time <= current_time:
                 self.running_jobs.remove(job)
+                self.logger.debug("Job %s finished at %d" % (job.to_string(), current_time))
         
         # update canvas
         self.canvas[:, :-1, :] = self.canvas[:, 1:, :]
@@ -98,4 +100,3 @@ class Machine:
             if color not in used_colors:
                 return color
         return 0
-    

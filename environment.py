@@ -51,7 +51,8 @@ class ResourceManagementEnv:
         self.job_backlog = JobBacklog(parameters.backlog_size)
         self.machine = Machine(parameters.number_resources, \
             parameters.max_resource_slots,                  \
-            parameters.time_horizon)
+            parameters.time_horizon,
+            logger)
 
         # Maybe generate 1 work_sequence for each episode?
         self.work_sequences = self.generate_work_sequences() # Should this be generated each time?
@@ -74,8 +75,8 @@ class ResourceManagementEnv:
             allocation = self.machine.allocate_job(self.job_queue[action], self.current_time)
 
         if allocation:
-            self.logger.debug("Job (id: %d, length: %d, res_vec: %s) has started running" % \
-                (self.job_queue[action].id, self.job_queue[action].length, np.array2string(self.job_queue[action].resource_vector)))
+            self.logger.debug("Job (id: %d, length: %d, res_vec: %s) has started running at %d" % \
+                (self.job_queue[action].id, self.job_queue[action].length, np.array2string(self.job_queue[action].resource_vector), self.current_time))
             # remove the job from the queue
             self.job_queue[action] = None
             # deque from job backlog
@@ -111,18 +112,32 @@ class ResourceManagementEnv:
                                     (new_job.id, new_job.length, np.array2string(new_job.resource_vector)))
                             self.job_backlog.enqueue(new_job)
                     else: self.logger.debug("Skipping invalid job from job sequence.")
+                else: self.logger.debug("Sequence is completed, waiting for current jobs to finish.")
             # go to next job from sequence
             self.seq_idx += 1
             reward = self.reward()
 
         state = self.retrieve_state()
          
-        if done:
-            self.seq_number = (self.seq_number + 1) % self.simulation_length
-            self.reset()
+        #if done:
+        #    self.seq_number = (self.seq_number + 1) % self.simulation_length
+        #    self.reset()
         
-        return state, reward, done
+        # we also need the allocation, because of the artificial pause of the time (allowing multiple actions to be taken at each timestep)
+        return state, reward, done, allocation 
 
+    def next_jobset(self):
+        self.seq_number = (self.seq_number + 1) % self.simulation_length
+    
+    def print_work_seq(self):
+        #for t in range(len(work_sequences))
+        for x in self.work_sequences:
+            for job in x:
+                if job is not None:
+                    print(job.to_string())
+                else:
+                    print("Job is None")
+        #print([job.to_string() for job in [x for x in self.work_sequences]])
     
     def reward(self):
         """
@@ -163,7 +178,6 @@ class ResourceManagementEnv:
         """
         Resets the environment into it's initial state.
         """
-        self.seq_number = 0
         self.seq_idx = 0
         self.current_time = 0
         self.machine.reset()
@@ -247,12 +261,15 @@ class ResourceManagementEnv:
 
                 column_iterator += self.max_resource_slots
 
-        state[: int(self.job_backlog.num_jobs / backlog_width), column_iterator: column_iterator + backlog_width] = 1
-        if self.job_backlog.num_jobs % backlog_width > 0:
-            state[self.job_backlog.num_jobs / backlog_width,
-                       column_iterator: column_iterator + self.job_backlog.num_jobs % backlog_width] = 1
-        column_iterator += backlog_width
-
+        if self.job_backlog.num_jobs <= self.input_height:
+            state[: self.job_backlog.num_jobs, column_iterator] = 1
+            column_iterator += backlog_width
+        else:
+            aux = int(math.floor(self.job_backlog.num_jobs / float(self.time_horizon)))
+            state[:, column_iterator: (column_iterator + aux)] = 1
+            column_iterator += aux
+            state[: (int(self.job_backlog.num_jobs % self.input_height)), column_iterator] = 1
+            column_iterator += 1
         assert column_iterator == state.shape[1]
 
         return state

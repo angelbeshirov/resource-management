@@ -13,6 +13,9 @@ class Job:
         self.start_time = -1
         self.finish_time = -1
         self.logger = logger
+    
+    def __str__(self):
+        return self.to_string()
 
     def set_start_time(self, start_time):
         """
