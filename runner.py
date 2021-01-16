@@ -8,6 +8,7 @@ from data_generator import DataGenerator
 from neural_network import Neural_network
 from job import Job
 from logger import LogLevel, Logger
+from trainer import Trainer
 
 
 
@@ -20,11 +21,15 @@ def main():
     parser.add_argument("-l", "--loglevel", type=str, default="info", choices=['debug', 'info'], help="Log level to be used.")
     args = parser.parse_args()
 
+    # if args.train:
+        # logger = Logger(LogLevel[args.loglevel])
+        # env = ResourceManagementEnv(parameters, logger, to_render=False, termination_type=TerminationType.AllJobsDone)
+        # neural_net = Neural_network(parameters, env, logger)
+        # neural_net.train()
     if args.train:
         logger = Logger(LogLevel[args.loglevel])
-        env = ResourceManagementEnv(parameters, logger, to_render=False, termination_type=TerminationType.AllJobsDone)
-        neural_net = Neural_network(parameters, env, logger)
-        neural_net.train()
+        trainer = Trainer(parameters, logger) # does the multiseq training
+        trainer.train_test()
 
 if __name__ == '__main__':
     main()

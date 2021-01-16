@@ -2,37 +2,193 @@ import numpy as np
 from neural_network import Neural_network
 from parameters import Parameters
 from data_generator import DataGenerator
-from environment import ResourceManagementEnv
+from environment import ResourceManagementEnv, TerminationType
+from logger import Logger, LogLevel
+from sys import maxsize
 
+import matplotlib.pyplot as plt
+
+import time
+import random
 import jax.numpy as jnp
+import jax
 
-def main():
-    parameters = Parameters()
-    env = ResourceManagementEnv(parameters)
-    neural_net = Neural_network(parameters, env)
-    env.step(0)
-    state1 = env.retrieve_state()
-    env.step(1)
-    state2 = env.retrieve_state()
-    env.step(0)
-    state3 = env.retrieve_state()
-    env.step(1)
-    state4 = env.retrieve_state()
+class Trainer:
 
-    #data = env.generate_work_sequences()
+    def __init__(self, parameters, logger = Logger(LogLevel['info'])):
+        self.parameters = parameters
+        self.logger = logger
+        self.number_episodes = parameters.number_episodes
 
-    # print(np.array2string(env.observe()))
-    # data.reshape([1, 60, -1])
-    data = np.array([state1, state2, state3, state4])
-    # print(neural_net.predict(data.reshape([1, -1])))
-    output = neural_net.predict(data.reshape([4, -1]))
-    print(output)
+    def train_subroutine(self, nn, parameters, data, seq_number, result):
+        env = nn.env
+        env.work_sequences = data
+        env.seq_number = seq_number
+        env.reset()
 
-    print('conservation of probability', np.sum(jnp.exp(output), axis=1))
-    print("Actions to take are {}".format(jnp.argmax(output, axis=1)))
+        states = np.zeros((parameters.batch_size, parameters.episode_max_length, parameters.input_height * parameters.input_width), dtype=np.float32)
+        actions = np.zeros((parameters.batch_size, parameters.episode_max_length), dtype=np.int)
+        returns = np.zeros((parameters.batch_size, parameters.episode_max_length), dtype=np.float32)
 
-    neural_net.train()
+        avg_slowdowns = np.zeros(parameters.batch_size, dtype=np.float32)
+        avg_completion_times = np.zeros(parameters.batch_size, dtype=np.float32)
 
+        # get current policy  network params
+        current_params = nn.get_params(nn.opt_state)
 
-if __name__ == '__main__':
-    main()
+        for j in range(parameters.batch_size):
+            
+            self.logger.debug("Monte carlo simulation %d started in thread for seq %d" % (j, seq_number))
+            # reset environment to the initial state
+            env.reset()
+        
+            # zero rewards array (auxiliary array to store the rewards, and help compute the returns)
+            rewards = np.zeros((parameters.episode_max_length, ), dtype=np.float32)
+
+            # loop over steps in an episode
+            for time_step in range(parameters.episode_max_length):
+
+                # select state
+                state = env.retrieve_state() # Fix the shape?
+                states[j, time_step, :] = state
+                
+                # select an action according to current policy
+                pi_s = np.exp(nn.predict_jax(current_params, state))
+                action = np.random.choice(env.actions, p = pi_s)
+                actions[j, time_step] = action
+                
+                # take an environment step
+                _ , reward, done, allocation = env.step(action)
+                while allocation == True:
+                    _ , reward, done, allocation = env.step(action)
+
+                # If everything is executed the rest of the rewards will be 0
+                # which is exactly the expected behaviour since the environment
+                # only returns negative rewards (-1/T_j)
+                if done:
+                    self.logger.info("No more jobs in the environment, everything is executed.")
+                    break
+
+                # store reward
+                rewards[time_step] = reward
+                
+            # compute reward-to-go 
+            # e.g. rewards = 1 2 3 4
+            # rewards[::-1] = 4 3 2 1
+            # cumsum -> 4 7 9 10
+            # [::-1] -> 10 9 7 4
+            returns[j,:] = jnp.cumsum(rewards[::-1])[::-1]
+            avg_slowdowns[j] = env.get_average_slowdown()
+            avg_completion_times[j] = env.get_average_completion_time()
+
+        result.append({"states": states,
+                       "actions": actions,
+                       "returns": returns,
+                       "avg_slowdowns": avg_slowdowns,
+                       "avg_completion_time": avg_completion_times})
+
+    def train_test(self):
+        best_reward = -maxsize
+        env = ResourceManagementEnv(self.parameters, self.logger, to_render=False, termination_type=TerminationType.AllJobsDone)
+        simulation_length = self.parameters.simulation_length
+        data = env.generate_work_sequences() # should be generated from outside the environment and each job_sequence should be passed to the respected env
+        nn = Neural_network(self.parameters, env, self.logger)
+
+        _, axs = plt.subplots(2, 3, figsize=(12,8))
+
+        self.logger.info("Starting training")
+
+        # mean reward at the end of the episode
+        mean_final_reward = np.zeros(self.number_episodes, dtype=np.float32)
+        # total reward at the end of the episode
+        total_final_reward = np.zeros_like(mean_final_reward)
+        # standard deviation of the reward at the end of the episode
+        std_final_reward = np.zeros_like(mean_final_reward)
+        # batch minimum at the end of the episode
+        min_final_reward = np.zeros_like(mean_final_reward)
+        # batch maximum at the end of the episode
+        max_final_reward = np.zeros_like(mean_final_reward)
+        # average slowdown at the end of the episode (slowdown = Sum -1/T_j (T_j = duration of jobs in the system))
+        mean_avg_slowdowns = np.zeros_like(mean_final_reward)
+        # average completion time at the end of the episode (completion_time = finish_time - enter_time)
+        mean_avg_completion_times = np.zeros_like(mean_final_reward)
+
+        losses = []
+        for episode in range(self.number_episodes): 
+            self.logger.info("Episode %d started" % episode)
+            start_time = time.time()
+            indices = list(range(simulation_length))
+            np.random.shuffle(indices)
+            result = []
+
+            for s in range(simulation_length):
+                self.train_subroutine(nn, self.parameters, data, indices[s], result)
+
+            loss = nn.update_multibatch(result)
+            losses.append(loss)
+            ### record time needed for a single epoch
+            episode_time = time.time() - start_time
+            returns = np.concatenate([r["returns"] for r in result])
+            avg_slowdowns = np.concatenate([r["avg_slowdowns"] for r in result])
+            avg_completion_times = np.concatenate([r["avg_completion_time"] for r in result])
+            # check performance
+            mean_final_reward[episode]=jnp.mean(returns[:,-1])
+            total_final_reward[episode] = jnp.sum(returns[:,-1])
+            std_final_reward[episode] =jnp.std(returns[:,-1])
+            min_final_reward[episode], max_final_reward[episode] = np.min(returns[:,-1]), np.max(returns[:,-1])
+            mean_avg_slowdowns[episode] = jnp.mean(avg_slowdowns)
+            mean_avg_completion_times[episode] = jnp.mean(avg_completion_times)
+
+            if total_final_reward[episode] >= best_reward:
+                self.logger.info("Saving new best model with reward %d in episode %d" % (total_final_reward[episode], episode))
+                nn.save("./best_model.pkl")
+                best_reward = total_final_reward[episode]
+
+            # # print results every 10 epochs
+            # #if episode % 5 == 0:
+            self.logger.info("episode {} in {:0.2f} sec".format(episode, episode_time))
+            self.logger.info("loss: {:0.4f}".format(loss))
+            self.logger.info("total reward: {:0.4f}".format(total_final_reward[episode]))
+            self.logger.info("mean reward: {:0.4f}".format(mean_final_reward[episode]))
+            self.logger.info("return standard deviation: {:0.4f}".format(std_final_reward[episode]))
+            self.logger.info("min return: {:0.4f}; max return: {:0.4f}".format(min_final_reward[episode], max_final_reward[episode]))
+            self.logger.info("average job slowdown: {:0.4f}".format(mean_avg_slowdowns[episode]))
+            self.logger.info("average job completion time: {:0.4f}\n".format(mean_avg_completion_times[episode]))
+
+            if nn.plot_freq > 0 and episode % nn.plot_freq == 0:
+                self.plot(axs, episode, total_final_reward, losses, mean_avg_slowdowns, mean_avg_completion_times, \
+                    min_final_reward, mean_final_reward, max_final_reward, std_final_reward)
+
+    def plot(self, axs, episode, total_rewards, losses, avg_slowdowns, avg_completion_times, \
+        min_reward, mean_reward, max_reward, std_reward):
+        episode_seq = np.arange(episode+1)
+        axs[0,0].clear()
+        axs[0,0].plot(episode_seq, total_rewards[:episode+1], '-o')
+        axs[0,0].set_title('Total reward')
+        axs[0,0].set(xlabel='Episode', ylabel='Total reward')
+
+        axs[0,1].plot(episode_seq, losses[:episode+1], '-o', color='green')
+        axs[0,1].set_title('Loss')
+        axs[0,1].set(xlabel='Episode', ylabel='Pseudo loss')
+
+        axs[1,0].plot(episode_seq, avg_slowdowns[:episode+1], '-o', color='orange')
+        axs[1,0].set_title('Average slowdown')
+        axs[1,0].set(xlabel='Episode', ylabel='Average slowdown')
+
+        axs[1,1].plot(episode_seq, avg_completion_times[:episode+1], '-o', color='red')
+        axs[1,1].set_title('Average completion time')
+        axs[1,1].set(xlabel='Episode', ylabel='Average completion time')
+
+        axs[0,2].plot(episode_seq, mean_reward[:episode+1], '-k', label='mean reward' )
+        axs[0,2].fill_between(episode_seq, 
+                        mean_reward[:episode+1]-0.5*std_reward[:episode+1], 
+                        mean_reward[:episode+1]+0.5*std_reward[:episode+1], 
+                        color='k', 
+                        alpha=0.25)
+
+        axs[0,2].plot(episode_seq, min_reward[:episode+1], '--b' , label='min reward' )
+        axs[0,2].plot(episode_seq, max_reward[:episode+1], '--r' , label='max reward' )
+        axs[0,2].set_title('Min/Mean/Max Reward')
+        axs[0,2].set(xlabel='Episode', ylabel='Min/Mean/Max Reward')
+
+        plt.pause(0.05)     

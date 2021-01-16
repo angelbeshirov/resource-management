@@ -7,7 +7,7 @@ import itertools
 from sys import maxsize
 
 from jax.experimental import stax 
-from jax.experimental.stax import Dense, Relu, LogSoftmax, Softmax
+from jax.experimental.stax import Dense, Relu, LogSoftmax
 from jax.tree_util import tree_flatten
 from jax.experimental import optimizers # gradient descent optimizers
 
@@ -71,9 +71,6 @@ class Neural_network:
         """
         return lmbda*jnp.sum(jnp.array([jnp.sum(jnp.abs(theta)**2) for theta in tree_flatten(params)[0] ]))
 
-
-    # -log(1-probabilities) * reward
-    # 20,200,11
     def pseudo_loss(self, params, trajectory_batch):
         """
         Define the pseudo loss function for policy gradient. 
@@ -93,19 +90,35 @@ class Neural_network:
         states, actions, returns = trajectory_batch
         # compute policy predictions
         preds = self.predict_jax(params, states)
-        #print("Predictions {}".format(preds))
         # combute the baseline
-        baseline = jnp.mean(returns, axis=0) # -100 -90 -80 -70 -60 -80
-        #print("Baseline {}".format(baseline))
-        #print("Returns {}".format(returns))
+        baseline = jnp.mean(returns, axis=0)
         # select those values of the policy along the action trajectory
-
-        # actions = 20x11 -> 20x11x1       
         preds_select = jnp.take_along_axis(preds, jnp.expand_dims(actions, axis=2), axis=2).squeeze()
-        #print(preds_select)
         # return negative pseudo loss function (want to maximize reward with gradient Descent)
-        #print("Returning loss: {}".format(-jnp.mean(jnp.sum(preds_select * (returns - baseline) )) + self.l2_regularizer(params, 0.001)))
         return -jnp.mean(jnp.sum(preds_select * (returns - baseline) )) + self.l2_regularizer(params, 0.001)
+
+    def pseudo_loss_multibatch(self, params, batches):
+        loss = 0
+        for batch in batches:
+            states = batch["states"]
+            actions = batch["actions"]
+            returns = batch["returns"]
+
+            preds = self.predict_jax(params, states)
+
+            baseline = jnp.mean(returns, axis=0)
+            preds_select = jnp.take_along_axis(preds, jnp.expand_dims(actions, axis=2), axis=2).squeeze()
+            loss += (-jnp.mean(jnp.sum(preds_select * (returns - baseline))) + self.l2_regularizer(params, 0.001))
+        return loss
+
+    def update_multibatch(self, batches):
+        current_params = self.get_params(self.opt_state)
+        loss, grad_params = value_and_grad(self.pseudo_loss_multibatch)(current_params, batches)
+
+        self.opt_state = self.opt_update(self.step, grad_params, self.opt_state)
+        self.step = self.step + 1
+        return loss
+
 
     def update(self, batch):
         """
@@ -120,7 +133,6 @@ class Neural_network:
 
         # compute gradients
         loss, grad_params = value_and_grad(self.pseudo_loss)(current_params, batch)
-        print("Loss is {}".format(loss))
 
         # perform the update
         self.opt_state = self.opt_update(self.step, grad_params, self.opt_state)
@@ -184,8 +196,6 @@ class Neural_network:
         fig, axs = plt.subplots(2, 3, figsize=(12,8))
         losses = []
 
-        #self.env.print_work_seq()
-
         # loop over the number of training episodes
         for episode in range(self.number_episodes): 
             
@@ -215,11 +225,8 @@ class Neural_network:
 
                     # select an action according to current policy
                     pi_s = np.exp(self.predict_jax(current_params, state))
-                    #pi_s = self.predict_jax(current_params, state)
-                    #print(pi_s[0])
-                    #print(np.sum(pi_s[0]))
                     action = np.random.choice(self.env.actions, p = pi_s[0])
-                    actions[j, time_step] = action # batch_sizexepisode_max_length
+                    actions[j, time_step] = action
 
                     # take an environment step
                     _ , reward, done, allocation = self.env.step(action)
@@ -237,7 +244,6 @@ class Neural_network:
 
                     # store reward
                     rewards[time_step] = reward
-                    #print(reward)
                     
                 # compute reward-to-go 
                 # e.g. rewards = 1 2 3 4
@@ -268,7 +274,7 @@ class Neural_network:
 
             if total_final_reward[episode] >= best_reward:
                 self.logger.info("Saving new best model with reward %d in episode %d" % (total_final_reward[episode], episode))
-                self.save("./best_model.pkl", self.env)
+                self.save("./best_model.pkl")
                 best_reward = total_final_reward[episode]
 
             # print results every 10 epochs
@@ -285,7 +291,7 @@ class Neural_network:
                 self.plot(axs, episode, total_final_reward, losses, mean_avg_slowdowns, mean_avg_completion_times, \
                     min_final_reward, mean_final_reward, max_final_reward, std_final_reward)
 
-    def save(self, path, env):
+    def save(self, path):
         """
         Saves the model parameters into the specified file.
         """
@@ -294,7 +300,7 @@ class Neural_network:
         pickle.dump(trained_params, file, -1)
         file.close()
 
-    def load(self, path, env):
+    def load(self, path):
         """
         Loads the model parameters from the specified file.
         """
@@ -303,38 +309,4 @@ class Neural_network:
         params = pickle.load(file)
 
         self.opt_state = self.opt_init(params)
-        
-    def plot(self, axs, episode, total_rewards, losses, avg_slowdowns, avg_completion_times, \
-        min_reward, mean_reward, max_reward, std_reward):
-        episode_seq = np.arange(episode+1)
-        axs[0,0].clear()
-        axs[0,0].plot(episode_seq, total_rewards[:episode+1], '-o')
-        axs[0,0].set_title('Total reward')
-        axs[0,0].set(xlabel='Episode', ylabel='Total reward')
-
-        axs[0,1].plot(episode_seq, losses[:episode+1], '-o', color='green')
-        axs[0,1].set_title('Loss')
-        axs[0,1].set(xlabel='Episode', ylabel='Pseudo loss')
-
-        axs[1,0].plot(episode_seq, avg_slowdowns[:episode+1], '-o', color='orange')
-        axs[1,0].set_title('Average slowdown')
-        axs[1,0].set(xlabel='Episode', ylabel='Average slowdown')
-
-        axs[1,1].plot(episode_seq, avg_completion_times[:episode+1], '-o', color='red')
-        axs[1,1].set_title('Average completion time')
-        axs[1,1].set(xlabel='Episode', ylabel='Average completion time')
-
-        axs[0,2].plot(episode_seq, mean_reward[:episode+1], '-k', label='mean reward' )
-        axs[0,2].fill_between(episode_seq, 
-                        mean_reward[:episode+1]-0.5*std_reward[:episode+1], 
-                        mean_reward[:episode+1]+0.5*std_reward[:episode+1], 
-                        color='k', 
-                        alpha=0.25)
-
-        axs[0,2].plot(episode_seq, min_reward[:episode+1], '--b' , label='min reward' )
-        axs[0,2].plot(episode_seq, max_reward[:episode+1], '--r' , label='max reward' )
-        axs[0,2].set_title('Min/Mean/Max Reward')
-        axs[0,2].set(xlabel='Episode', ylabel='Min/Mean/Max Reward')
-
-        plt.pause(0.05)
 

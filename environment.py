@@ -137,7 +137,6 @@ class ResourceManagementEnv:
                     print(job.to_string())
                 else:
                     print("Job is None")
-        #print([job.to_string() for job in [x for x in self.work_sequences]])
     
     def reward(self):
         """
@@ -152,7 +151,16 @@ class ResourceManagementEnv:
                 reward += self.hold_penalty / float(job.length)
         reward += self.job_backlog.calc_panalty(self.dismiss_penalty)
         return reward
-        
+
+
+    def reward_completion(self):
+        reward = len(self.machine.running_jobs)
+        for job in self.job_queue:
+            if job is not None:
+                reward += 1
+        reward += self.job_backlog.num_jobs
+
+        return -reward
 
     def done(self):
         """
@@ -250,7 +258,7 @@ class ResourceManagementEnv:
         column_iterator = 0
 
         for i in range(self.number_resources):
-            state[:, column_iterator: column_iterator + self.max_resource_slots] = self.machine.canvas[i, :, :]
+            state[:, column_iterator: column_iterator + self.max_resource_slots] = self.machine.canvas[i, :, :] # 2x60x25
             column_iterator += self.max_resource_slots
 
             for j in range(self.work_queue_size):
@@ -272,7 +280,47 @@ class ResourceManagementEnv:
             column_iterator += 1
         assert column_iterator == state.shape[1]
 
-        return state
+        return state.flatten()
+
+    def retrieve_compact_state(self):
+            state = np.zeros(self.time_horizon * (self.number_resources + 1) + self.work_queue_size * (self.number_resources + 1) + 1)
+
+            iterator = 0
+
+            # current work reward, after each time step, how many jobs left in the machine
+            job_allocated = np.ones(self.time_horizon) * len(self.machine.running_jobs)
+            for j in self.machine.running_jobs:
+                job_allocated[j.finish_time - self.current_time: ] -= 1
+
+            state[iterator: iterator + self.time_horizon] = job_allocated
+            iterator += self.time_horizon
+
+            # current work available slots
+            for i in range(self.number_resources):
+                state[iterator: iterator + self.time_horizon] = self.machine.available_slots[:, i]
+                iterator += self.time_horizon
+
+            # new work duration and size
+            for i in range(self.work_queue_size):
+
+                if self.job_queue[i] is None:
+                    state[iterator: iterator + self.number_resources + 1] = 0
+                    iterator += self.number_resources + 1
+                else:
+                    state[iterator] = self.job_queue[i].length
+                    iterator += 1
+
+                    for j in range(self.number_resources):
+                        state[iterator] = self.job_queue[i].resource_vector[j]
+                        iterator += 1
+
+            # backlog queue
+            state[iterator] = self.job_backlog.num_jobs
+            iterator += 1
+
+            assert iterator == len(state)  # fill up the compact representation vector
+
+            return state
 
     def get_average_slowdown(self):
         """
