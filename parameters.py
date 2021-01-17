@@ -12,7 +12,7 @@ class Parameters:
 
         self.jobs_sequence_length = 50 * self.t # length of one sequence of jobs, this parameter control the environemnt load
         self.simulation_length = 5              # number of job sequences, 100
-        self.job_rate = 0.70                    # probability for a new job to arrive
+        self.job_rate = 0.60                    # probability for a new job to arrive
         self.time_horizon = 20 * self.t         # number of observed time steps
         self.work_queue_size = 10               # maximum number of waiting jobs in the queue
         self.backlog_size = 60                  # size of backlog queue

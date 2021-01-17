@@ -12,6 +12,7 @@ import time
 import random
 import jax.numpy as jnp
 import jax
+import util
 
 class Trainer:
 
@@ -58,8 +59,11 @@ class Trainer:
                 actions[j, time_step] = action
                 
                 # take an environment step
-                _ , reward, done, allocation = env.step(action)
+                _, reward, done, allocation = env.step(action)
                 while allocation == True:
+                    state = env.retrieve_state()
+                    pi_s = np.exp(nn.predict_jax(current_params, state))
+                    action = np.random.choice(env.actions, p = pi_s)
                     _ , reward, done, allocation = env.step(action)
 
                 # If everything is executed the rest of the rewards will be 0
@@ -87,6 +91,21 @@ class Trainer:
                        "avg_slowdowns": avg_slowdowns,
                        "avg_completion_time": avg_completion_times})
 
+    # Pseudocode for training algorithm
+    # for each iteration:
+    #   ∆θ ← 0
+    #   for each jobset:
+    #       run episode i = 1, . . . , N :
+    #       {s_i0, a_i0, r_i1, ... s_iLi, aiLi, riLi+1}
+    #       compute returns: v_it = Sum[s=t to Li](gama^(s-t)*r_is)
+    #       for t = 1 to L:
+    #       compute baseline: b_t = 1/N*Sum[i=1 to N](v_it)
+    #       for i = 1 to N :
+    #           ∆θ ← ∆θ + α∇_θ log π_θ(s_it , a_it )(v_it − b_it )
+    #       end
+    #   end
+    # end
+    # θ ← θ + ∆θ % batch parameter update
     def train_test(self):
         best_reward = -maxsize
         env = ResourceManagementEnv(self.parameters, self.logger, to_render=False, termination_type=TerminationType.AllJobsDone)
@@ -156,39 +175,5 @@ class Trainer:
             self.logger.info("average job completion time: {:0.4f}\n".format(mean_avg_completion_times[episode]))
 
             if nn.plot_freq > 0 and episode % nn.plot_freq == 0:
-                self.plot(axs, episode, total_final_reward, losses, mean_avg_slowdowns, mean_avg_completion_times, \
-                    min_final_reward, mean_final_reward, max_final_reward, std_final_reward)
-
-    def plot(self, axs, episode, total_rewards, losses, avg_slowdowns, avg_completion_times, \
-        min_reward, mean_reward, max_reward, std_reward):
-        episode_seq = np.arange(episode+1)
-        axs[0,0].clear()
-        axs[0,0].plot(episode_seq, total_rewards[:episode+1], '-o')
-        axs[0,0].set_title('Total reward')
-        axs[0,0].set(xlabel='Episode', ylabel='Total reward')
-
-        axs[0,1].plot(episode_seq, losses[:episode+1], '-o', color='green')
-        axs[0,1].set_title('Loss')
-        axs[0,1].set(xlabel='Episode', ylabel='Pseudo loss')
-
-        axs[1,0].plot(episode_seq, avg_slowdowns[:episode+1], '-o', color='orange')
-        axs[1,0].set_title('Average slowdown')
-        axs[1,0].set(xlabel='Episode', ylabel='Average slowdown')
-
-        axs[1,1].plot(episode_seq, avg_completion_times[:episode+1], '-o', color='red')
-        axs[1,1].set_title('Average completion time')
-        axs[1,1].set(xlabel='Episode', ylabel='Average completion time')
-
-        axs[0,2].plot(episode_seq, mean_reward[:episode+1], '-k', label='mean reward' )
-        axs[0,2].fill_between(episode_seq, 
-                        mean_reward[:episode+1]-0.5*std_reward[:episode+1], 
-                        mean_reward[:episode+1]+0.5*std_reward[:episode+1], 
-                        color='k', 
-                        alpha=0.25)
-
-        axs[0,2].plot(episode_seq, min_reward[:episode+1], '--b' , label='min reward' )
-        axs[0,2].plot(episode_seq, max_reward[:episode+1], '--r' , label='max reward' )
-        axs[0,2].set_title('Min/Mean/Max Reward')
-        axs[0,2].set(xlabel='Episode', ylabel='Min/Mean/Max Reward')
-
-        plt.pause(0.05)     
+                util.plot(axs, episode, total_final_reward, losses, mean_avg_slowdowns, mean_avg_completion_times, \
+                    min_final_reward, mean_final_reward, max_final_reward, std_final_reward)   
