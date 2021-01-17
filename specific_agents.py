@@ -48,3 +48,33 @@ class PackerAgent:
                         action = i
         return action
 
+
+class SJFAgent:
+    def __init__(self, parameters, env, logger = Logger(LogLevel['info'])):
+        self.work_queue_size = parameters.work_queue_size
+        self.time_horizon = parameters.time_horizon
+        self.env = env
+        self.logger = logger
+
+    def predict(self, work_queue):
+        """
+        Shortest job first (SJF) agent picks the job with highest SJF score
+        SJF score = 1 / T, where T is the work length
+        """
+        action = self.work_queue_size
+        max_sjf_score = 0
+
+        for i in range(self.work_queue_size):
+            job = work_queue[i]
+            if job is not None:
+                for t in range(self.time_horizon - job.length):
+                    available_slots = \
+                        self.env.machine.available_slots[t:t+job.length, :] - job.resource_vector
+                    
+                    if np.all(available_slots >= 0):
+                        tmp_score = 1 / float(job.length)
+
+                        if tmp_score > max_sjf_score:
+                            max_sjf_score = tmp_score
+                            action = i
+        return action

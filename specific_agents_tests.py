@@ -1,7 +1,7 @@
 from job import Job
 from machine import Machine
 from logger import Logger, LogLevel
-from specific_agents import PackerAgent
+from specific_agents import PackerAgent, SJFAgent
 from test_parameters import TestParameters
 from environment import ResourceManagementEnv, TerminationType
 import numpy as np
@@ -9,22 +9,34 @@ import pytest
 import copy
 
 def generate_work_sequence():
-    job_lengths = np.array([3, 8, 50, 20, 11])
-    job_resource_vectors = np.array([
+    job_lengths = np.array([[3, 8, 50, 20, 11], [24, 3, 11, 2, 18]])
+    job_resource_vectors = np.array([[
         [10, 14],
         [11, 5],
         [2, 5],
         [23, 4],
         [25, 25],
-    ])
-    assert len(job_lengths) == len(job_resource_vectors), "Job lengths and resource vectors must be the same number"
-    work_sequence = np.full((1, len(job_lengths)), None, dtype=object)
+    ], 
+    [
+        [10, 14],
+        [11, 5],
+        [2, 5],
+        [23, 4],
+        [25, 25],
+    ]])
+    assert len(job_lengths[0]) == len(job_resource_vectors[0]), "Job lengths and resource vectors must be the same number for ech sequence"
+    assert len(job_lengths) == len(job_resource_vectors), "Work sequences must be the same number"
+    work_sequence = np.full((2, len(job_lengths[0])), None, dtype=object)
 
     for i in range(len(job_lengths)):
-        job = Job(job_resource_vectors[i], \
-            job_lengths[i], i + 1)
-        work_sequence[0,i] = job 
+        for j in range(len(job_lengths[0])):
+            job = Job(job_resource_vectors[i, j], \
+                job_lengths[i, j], i * len(job_lengths[0]) + j + 1)
+            work_sequence[i,j] = job 
     return work_sequence
+
+def generate_empty_work_sequence():
+    return np.full((1, 5), None)
 
 def test_packer_action():
     """
@@ -75,9 +87,46 @@ def test_packer_invalid_action():
     packer_action = packer.predict(work_queue)
     print(packer_action)
 
+
+def test_sjf_action():
+    work_sequences = generate_work_sequence()
+    parameters = TestParameters()
+    logger = Logger(LogLevel['info'])
+    machine = Machine(2, 50, 60, logger)
+    env = ResourceManagementEnv(parameters, logger, to_render=False, termination_type=TerminationType.AllJobsDone)
+    env.machine = machine
+    sjf_agent = SJFAgent(parameters, env, logger)
+
+    for i in range(len(work_sequences)):
+        work_queue = work_sequences[i]
+        sjf_action = sjf_agent.predict(work_queue)    
+
+        print("Sjf agent picked action with index: %d " % sjf_action)
+
+        for j in range(len(work_queue)):
+            print("Job {} with sjf score: {}".format(j, 1 / float(work_queue[j].length)))
+
+        if i == 0:
+            assert sjf_action == 0
+        if i == 1:
+            assert sjf_action == 3
+
+def test_sjf_action_empty_queue():
+    work_sequences = generate_empty_work_sequence()
+    parameters = TestParameters()
+    logger = Logger(LogLevel['info'])
+    machine = Machine(2, 50, 60, logger)
+    env = ResourceManagementEnv(parameters, logger, to_render=False, termination_type=TerminationType.AllJobsDone)
+    env.machine = machine
+    sjf_agent = SJFAgent(parameters, env, logger)
+
+    work_queue = work_sequences[0]
+    sjf_action = sjf_agent.predict(work_queue)
+    assert sjf_action == len(work_queue), "Action should be invalid when work queue is empty"
+
+
 if __name__ == '__main__':
     test_packer_action()
     test_packer_invalid_action()
-
-
-
+    test_sjf_action()
+    test_sjf_action_empty_queue()

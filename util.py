@@ -34,36 +34,50 @@ def retrieve_test_data():
             counter = counter + 1
     return work_sequences
 
-def plot(axs, episode, total_rewards, losses, avg_slowdowns, avg_completion_times, \
-    min_reward, mean_reward, max_reward, std_reward):
-    episode_seq = np.arange(episode+1)
-    axs[0,0].clear()
-    axs[0,0].plot(episode_seq, total_rewards[:episode+1], '-o')
-    axs[0,0].set_title('Total reward')
-    axs[0,0].set(xlabel='Episode', ylabel='Total reward')
+def plot_total_rewards(axs, episode_seq, total_rewards, best_reward):
+    episode = episode_seq[-1]
+    axs.plot(episode_seq, total_rewards[:episode+1], '-o')
+    axs.set_title('Total reward')
+    axs.axhline(best_reward, linestyle='--')
+    axs.set(xlabel='Episode', ylabel='Total reward')
 
-    axs[0,1].plot(episode_seq, losses[:episode+1], '-o', color='green')
-    axs[0,1].set_title('Loss')
-    axs[0,1].set(xlabel='Episode', ylabel='Pseudo loss')
+def plot_losses(axs, episode_seq, losses):
+    episode = episode_seq[-1]
+    axs.plot(episode_seq, losses[:episode+1], '-o', color='green')
+    axs.set_title('Loss')
+    axs.axhline(0, color='red')
+    axs.set(xlabel='Episode', ylabel='Pseudo loss')
 
-    axs[1,0].plot(episode_seq, avg_slowdowns[:episode+1], '-o', color='orange')
-    axs[1,0].set_title('Average slowdown')
-    axs[1,0].set(xlabel='Episode', ylabel='Average slowdown')
+def plot_avg_slowdowns(axs, episode_seq, avg_slowdowns):
+    axs.clear()
+    episode = episode_seq[-1]
+    axs.plot(episode_seq, avg_slowdowns[:episode+1], '-o', color='orange')
+    axs.set_title('Average slowdown')
+    axs.set(xlabel='Episode', ylabel='Average slowdown')
 
-    axs[1,1].plot(episode_seq, avg_completion_times[:episode+1], '-o', color='red')
-    axs[1,1].set_title('Average completion time')
-    axs[1,1].set(xlabel='Episode', ylabel='Average completion time')
+def plot_avg_completion_time(axs, episode_seq, avg_completion_times):
+    axs.clear()
+    episode = episode_seq[-1]
+    axs.plot(episode_seq, avg_completion_times[:episode+1], '-o', color='red')
+    axs.set_title('Average completion time')
+    axs.set(xlabel='Episode', ylabel='Average completion time')
 
-    axs[0,2].plot(episode_seq, mean_reward[:episode+1], '-k', label='mean reward' )
-    axs[0,2].fill_between(episode_seq, 
+def plot_min_max_rewards(axs, episode_seq, min_reward, max_reward, mean_reward, std_reward):
+    episode = episode_seq[-1]
+    axs.plot(episode_seq, mean_reward[:episode+1], '-k', label='mean reward')
+    axs.fill_between(episode_seq, 
                     mean_reward[:episode+1]-0.5*std_reward[:episode+1], 
                     mean_reward[:episode+1]+0.5*std_reward[:episode+1], 
                     color='k', 
                     alpha=0.25)
 
-    axs[0,2].plot(episode_seq, min_reward[:episode+1], '--b' , label='min reward' )
-    axs[0,2].plot(episode_seq, max_reward[:episode+1], '--r' , label='max reward' )
-    axs[0,2].set_title('Min/Mean/Max Reward')
-    axs[0,2].set(xlabel='Episode', ylabel='Min/Mean/Max Reward')
+    axs.plot(episode_seq, min_reward[:episode+1], '--b' , label='min reward')
+    axs.plot(episode_seq, max_reward[:episode+1], '--r' , label='max reward')
+    axs.set_title('Min/Mean/Max Reward')
+    axs.set(xlabel='Episode', ylabel='Min/Mean/Max Reward')
 
-    plt.pause(0.05)
+def plot_system_load(axs, episode_seq, avg_system_loads):
+    episode = episode_seq[-1]
+    axs.plot(episode_seq, avg_system_loads[:episode+1] * 100, '-o', color='red')
+    axs.set_title('Average system load in %')
+    axs.set(xlabel='Episode', ylabel='Average system load')

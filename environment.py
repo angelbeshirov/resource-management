@@ -349,3 +349,15 @@ class ResourceManagementEnv:
                     completion_times_sum += (job.finish_time - job.enter_time)
                     finished_jobs_cnt += 1
         return completion_times_sum / float(finished_jobs_cnt)
+
+    def get_queue_load(self):
+        """
+        Returns queue load, calculated by the formula
+        queue_load = jobs_in_queue / queue_size,
+        where jobs_in_queue = the number on non-None
+        slots in the queue
+        """
+        return np.mean([1 if job is not None else 0 for job in self.job_queue])
+
+    def get_load(self):
+        return self.get_queue_load() + self.machine.get_load()

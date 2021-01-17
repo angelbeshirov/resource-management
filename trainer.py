@@ -33,6 +33,7 @@ class Trainer:
 
         avg_slowdowns = np.zeros(parameters.batch_size, dtype=np.float32)
         avg_completion_times = np.zeros(parameters.batch_size, dtype=np.float32)
+        system_loads = np.zeros(parameters.batch_size, dtype=np.float32)
 
         # get current policy  network params
         current_params = nn.get_params(nn.opt_state)
@@ -84,12 +85,14 @@ class Trainer:
             returns[j,:] = jnp.cumsum(rewards[::-1])[::-1]
             avg_slowdowns[j] = env.get_average_slowdown()
             avg_completion_times[j] = env.get_average_completion_time()
+            system_loads[j] = env.get_load()
 
         result.append({"states": states,
                        "actions": actions,
                        "returns": returns,
                        "avg_slowdowns": avg_slowdowns,
-                       "avg_completion_time": avg_completion_times})
+                       "avg_completion_time": avg_completion_times,
+                       "system_loads": system_loads})
 
     # Pseudocode for training algorithm
     # for each iteration:
@@ -113,7 +116,7 @@ class Trainer:
         data = env.generate_work_sequences() # should be generated from outside the environment and each job_sequence should be passed to the respected env
         nn = Neural_network(self.parameters, env, self.logger)
 
-        _, axs = plt.subplots(2, 3, figsize=(12,8))
+        _, axs = plt.subplots(2, 3, figsize=(15,9))
 
         self.logger.info("Starting training")
 
@@ -131,6 +134,8 @@ class Trainer:
         mean_avg_slowdowns = np.zeros_like(mean_final_reward)
         # average completion time at the end of the episode (completion_time = finish_time - enter_time)
         mean_avg_completion_times = np.zeros_like(mean_final_reward)
+        # average system load at the end of episode
+        avg_system_loads = np.zeros_like(mean_final_reward)
 
         losses = []
         for episode in range(self.number_episodes): 
@@ -150,6 +155,7 @@ class Trainer:
             returns = np.concatenate([r["returns"] for r in result])
             avg_slowdowns = np.concatenate([r["avg_slowdowns"] for r in result])
             avg_completion_times = np.concatenate([r["avg_completion_time"] for r in result])
+            system_loads = np.concatenate([r["system_loads"] for r in result])
             # check performance
             mean_final_reward[episode]=jnp.mean(returns[:,-1])
             total_final_reward[episode] = jnp.sum(returns[:,-1])
@@ -157,6 +163,7 @@ class Trainer:
             min_final_reward[episode], max_final_reward[episode] = np.min(returns[:,-1]), np.max(returns[:,-1])
             mean_avg_slowdowns[episode] = jnp.mean(avg_slowdowns)
             mean_avg_completion_times[episode] = jnp.mean(avg_completion_times)
+            avg_system_loads[episode] = jnp.mean(system_loads)
 
             if total_final_reward[episode] >= best_reward:
                 self.logger.info("Saving new best model with reward %d in episode %d" % (total_final_reward[episode], episode))
@@ -175,5 +182,11 @@ class Trainer:
             self.logger.info("average job completion time: {:0.4f}\n".format(mean_avg_completion_times[episode]))
 
             if nn.plot_freq > 0 and episode % nn.plot_freq == 0:
-                util.plot(axs, episode, total_final_reward, losses, mean_avg_slowdowns, mean_avg_completion_times, \
-                    min_final_reward, mean_final_reward, max_final_reward, std_final_reward)   
+                episode_seq = np.arange(episode + 1)
+                util.plot_total_rewards(axs[0,0], episode_seq, total_final_reward, best_reward)
+                util.plot_losses(axs[0,1], episode_seq, losses)
+                util.plot_min_max_rewards(axs[0,2], episode_seq, min_final_reward, max_final_reward, mean_final_reward, std_final_reward)
+                util.plot_avg_slowdowns(axs[1,0], episode_seq, avg_slowdowns)
+                util.plot_avg_completion_time(axs[1,1], episode_seq, avg_completion_times)
+                util.plot_system_load(axs[1,2], episode_seq, avg_system_loads)
+                plt.pause(0.05)
