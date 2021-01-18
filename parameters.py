@@ -10,7 +10,7 @@ class Parameters:
         self.max_resource_slots = self.r        # max number of available resource slots per resource
         self.episode_max_length = 150           # maximum number of time steps in an episode
 
-        self.jobs_sequence_length = 50 * self.t # length of one sequence of jobs, this parameter control the environemnt load
+        self.jobs_sequence_length = 70          # length of one sequence of jobs, this parameter control the environemnt load
         self.simulation_length = 5              # number of job sequences, 100
         self.job_rate = 0.60                    # probability for a new job to arrive
         self.time_horizon = 20 * self.t         # number of observed time steps
@@ -22,7 +22,7 @@ class Parameters:
         self.dismiss_penalty = -1               # penalty for missing a job b/c of full queue
 
         # RMSProp
-        self.learning_rate = 0.0005             # the learning rate for training
+        self.learning_rate = 0.001             # the learning rate for training
         self.gamma = 0.9                        # the gamma parameter for RMSProp
         self.eps = 1e-8                         # the eps parameter for RMSProp
 
@@ -35,8 +35,8 @@ class Parameters:
 
         self.input_height = self.time_horizon           # the network input height
         self.input_width = self.network_input_width = \
-             int(self.r +
-              self.work_queue_size * self.r ) * self.number_resources + self.backlog_width # the network input width
+             int(1 +
+              self.work_queue_size) * self.number_resources + self.backlog_width # the network input width
 
         # input height  width for the compact state
         #self.input_height = 1

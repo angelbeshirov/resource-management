@@ -109,7 +109,7 @@ class Neural_network:
 
             baseline = jnp.mean(returns, axis=0)
             preds_select = jnp.take_along_axis(preds, jnp.expand_dims(actions, axis=2), axis=2).squeeze()
-            loss += (-jnp.mean(jnp.sum(preds_select * (returns - baseline))) + self.l2_regularizer(params, 0.001))
+            loss += (-jnp.mean(jnp.sum(preds_select * (returns - baseline)))) #+ self.l2_regularizer(params, 0.001))
         return loss
 
     def update_multibatch(self, batches):
@@ -148,6 +148,7 @@ class Neural_network:
         """
         params = self.get_params(self.opt_state)
         return self.predict_jax(params, data)
+        
     def save(self, path):
         """
         Saves the model parameters into the specified file.

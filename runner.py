@@ -11,7 +11,7 @@ from job import Job
 from logger import LogLevel, Logger
 from trainer import Trainer
 from evaluator import Evaluator
-from specific_agents import PackerAgent
+from specific_agents import PackerAgent, SJFAgent
 
 def main():
     np.set_printoptions(precision=5)
@@ -33,7 +33,7 @@ def main():
         trainer = Trainer(parameters, logger) # does the multiseq training
         trainer.train_test()
     elif args.evaluateall:
-        #util.generate_seq_and_save(parameters)
+        util.generate_sequence_and_save(parameters)
         test_sequence = util.retrieve_test_data()
         env = ResourceManagementEnv(parameters, logger, to_render=False, termination_type=TerminationType.AllJobsDone)
 
@@ -42,16 +42,21 @@ def main():
         env.simulation_length = 1
         env.job_sequence_length = test_sequence.shape[1]
 
+        #print("Work to be tested against is:")
+        #util.print_job_sequence(logger, test_sequence[0])
+
         # Run the evaluation
         nn = Neural_network(parameters, env, logger)
-        nn.load('./best_model.pkl')
+        nn.load('./best_model_slowdown.pkl')
 
-        packer = PackerAgent(parameters, env)
+        packer = PackerAgent(parameters, env, logger)
+        sjf = SJFAgent(parameters, env, logger)
 
         evaluator = Evaluator(parameters, env, logger)
 
-        evaluator.evaluate_dnn(nn, deterministic=True)
+        evaluator.evaluate_dnn(nn, deterministic=False)
         evaluator.evaluate_packer(packer)
+        evaluator.evaluate_sjf(sjf)
 
 if __name__ == '__main__':
     main()

@@ -49,9 +49,8 @@ class Trainer:
 
             # loop over steps in an episode
             for time_step in range(parameters.episode_max_length):
-
                 # select state
-                state = env.retrieve_state() # Fix the shape?
+                state = env.retrieve_state()
                 states[j, time_step, :] = state
                 
                 # select an action according to current policy
@@ -110,13 +109,19 @@ class Trainer:
     # end
     # θ ← θ + ∆θ % batch parameter update
     def train_test(self):
+        
+        f = open("logs/test_log" + time.strftime("%Y%m%d-%H%M%S") + ".txt", "a")
+        f.write("episode,loss,total_reward,mean_reward,return_standard_deviation,min_return,max_return,ajs,ajc\n")
+
         best_reward = -maxsize
+        best_slowdown = maxsize
         env = ResourceManagementEnv(self.parameters, self.logger, to_render=False, termination_type=TerminationType.AllJobsDone)
         simulation_length = self.parameters.simulation_length
         data = env.generate_work_sequences() # should be generated from outside the environment and each job_sequence should be passed to the respected env
+        self.serialize_data(data)
         nn = Neural_network(self.parameters, env, self.logger)
 
-        _, axs = plt.subplots(2, 3, figsize=(15,9))
+        _, axs = plt.subplots(2, 3, figsize=(16,10))
 
         self.logger.info("Starting training")
 
@@ -166,9 +171,14 @@ class Trainer:
             avg_system_loads[episode] = jnp.mean(system_loads)
 
             if total_final_reward[episode] >= best_reward:
-                self.logger.info("Saving new best model with reward %d in episode %d" % (total_final_reward[episode], episode))
-                nn.save("./best_model.pkl")
+                self.logger.info("Saving new best reward model with reward %d in episode %d" % (total_final_reward[episode], episode))
+                nn.save("./models/best_model_reward_" + time.strftime("%Y%m%d-%H%M%S") + ".pkl")
                 best_reward = total_final_reward[episode]
+
+            if mean_avg_slowdowns[episode] <= best_slowdown:
+                self.logger.info("Saving new best slowdown model with slowdown %d in episode %d" % (mean_avg_slowdowns[episode], episode))
+                nn.save("./models/best_model_slowdown_" + time.strftime("%Y%m%d-%H%M%S") + ".pkl")
+                best_slowdown = mean_avg_slowdowns[episode]
 
             # # print results every 10 epochs
             # #if episode % 5 == 0:
@@ -180,13 +190,27 @@ class Trainer:
             self.logger.info("min return: {:0.4f}; max return: {:0.4f}".format(min_final_reward[episode], max_final_reward[episode]))
             self.logger.info("average job slowdown: {:0.4f}".format(mean_avg_slowdowns[episode]))
             self.logger.info("average job completion time: {:0.4f}\n".format(mean_avg_completion_times[episode]))
+            f.write("{},{:0.4f},{:0.4f},{:0.4f},{:0.4f},{:0.4f},{:0.4f},{:0.4f},{:0.4f}\n" \
+                .format(episode,loss,total_final_reward[episode],mean_final_reward[episode],std_final_reward[episode],\
+                    min_final_reward[episode],max_final_reward[episode],mean_avg_slowdowns[episode],mean_avg_completion_times[episode]))
 
             if nn.plot_freq > 0 and episode % nn.plot_freq == 0:
                 episode_seq = np.arange(episode + 1)
                 util.plot_total_rewards(axs[0,0], episode_seq, total_final_reward, best_reward)
                 util.plot_losses(axs[0,1], episode_seq, losses)
                 util.plot_min_max_rewards(axs[0,2], episode_seq, min_final_reward, max_final_reward, mean_final_reward, std_final_reward)
-                util.plot_avg_slowdowns(axs[1,0], episode_seq, avg_slowdowns)
-                util.plot_avg_completion_time(axs[1,1], episode_seq, avg_completion_times)
+                util.plot_avg_slowdowns(axs[1,0], episode_seq, mean_avg_slowdowns)
+                util.plot_avg_completion_time(axs[1,1], episode_seq, mean_avg_completion_times)
                 util.plot_system_load(axs[1,2], episode_seq, avg_system_loads)
                 plt.pause(0.05)
+        f.close()
+
+    def serialize_data(self, data):
+        f = open("data/train_data" + time.strftime("%Y%m%d-%H%M%S") + ".txt", "a")
+        for seq in data:
+            for job in seq:
+                if job is not None:
+                    f.write("|{},{}|,".format(job.length, np.array2string(job.resource_vector)))
+                else: f.write("None,")
+            f.write("\n")
+        f.close()

@@ -81,3 +81,9 @@ def plot_system_load(axs, episode_seq, avg_system_loads):
     axs.plot(episode_seq, avg_system_loads[:episode+1] * 100, '-o', color='red')
     axs.set_title('Average system load in %')
     axs.set(xlabel='Episode', ylabel='Average system load')
+
+def print_job_sequence(logger, job_sequence):
+    for job in job_sequence:
+        if job is not None:
+            logger.info(job.to_string())
+        else: logger.info("None")

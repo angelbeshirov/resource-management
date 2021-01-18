@@ -107,8 +107,8 @@ class Machine:
         calculated by the formula:
         machine_load = (res_1_load + res_2_load + ... + res_n_load) / n,
         where n = number_resources and
-        res_i_load = available_res_i_slots / (time_horizon * resource_slots)
+        res_i_load = (resource_slots - available_res_i_slots) / (time_horizon * resource_slots)
         """
-        res_loads = [np.sum(self.available_slots[:, res]) / (self.time_horizon * self.resource_slots) \
+        res_loads = [np.sum(self.resource_slots - self.available_slots[:, res]) / (self.time_horizon * self.resource_slots) \
             for res in range(self.number_resources)]
         return np.mean(res_loads)

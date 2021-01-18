@@ -23,6 +23,7 @@ class ResourceManagementEnv:
         self.seq_number = 0         # index of current exemple sequence
         self.seq_idx = 0            # index in the current example sequence
         self.current_time = 0       # current system time
+        self.current_queue_size = 0 # current queue size
 
         self.to_render = to_render
         self.termination_type = termination_type
@@ -79,44 +80,24 @@ class ResourceManagementEnv:
                 (self.job_queue[action].id, self.job_queue[action].length, np.array2string(self.job_queue[action].resource_vector), self.current_time))
             # remove the job from the queue
             self.job_queue[action] = None
+            self.current_queue_size -= 1
             # deque from job backlog
             if not self.job_backlog.empty():
                 self.job_queue[action] = self.job_backlog.dequeue()
                 self.logger.debug("Job (id: %d, length: %d, res_vec: %s) is added to queue (from backlog)" % \
                     (self.job_queue[action].id, self.job_queue[action].length, np.array2string(self.job_queue[action].resource_vector)))
+                self.current_queue_size += 1
         else:
             self.current_time += 1
             self.machine.time_proceed(self.current_time)
 
             # check whether to proceed
             done = self.done()
+            reward = self.reward()
             
             if not done:
-                # check if sequence is completed
-                if self.seq_idx < self.job_sequence_length:
-                    new_job = self.work_sequences[self.seq_number, self.seq_idx]
-                    added_to_queue = False
-
-                    if new_job is not None: # check if job is valid
-                        new_job.set_enter_time(self.current_time)
-
-                        for i in range(len(self.job_queue)):
-                            if self.job_queue[i] is None:   # empty slot in the queue
-                                self.job_queue[i] = new_job # put the new job in that slot
-                                added_to_queue = True
-                                self.logger.debug("Adding job (id: %d, length: %d, res_vec: %s) to queue" % \
-                                    (new_job.id, new_job.length, np.array2string(new_job.resource_vector)))
-                                break
-                        if not added_to_queue:
-                            self.logger.debug("Adding job (id: %d, length: %d, res_vec: %s) to backlog" % \
-                                    (new_job.id, new_job.length, np.array2string(new_job.resource_vector)))
-                            self.job_backlog.enqueue(new_job)
-                    else: self.logger.debug("Skipping invalid job from job sequence.")
-                else: self.logger.debug("Sequence is completed, waiting for current jobs to finish.")
-            # go to next job from sequence
-            self.seq_idx += 1
-            reward = self.reward()
-
+                self.fill_up_queue_and_backlog()
+        
         state = self.retrieve_state()
          
         #if done:
@@ -128,6 +109,46 @@ class ResourceManagementEnv:
 
     def next_jobset(self):
         self.seq_number = (self.seq_number + 1) % self.simulation_length
+
+    def fill_up_queue_and_backlog(self):
+        """
+        Fill up the queue and backlog.
+        """
+        if self.done():
+            return
+        # Fill up the queue from the backlog
+        while not self.job_backlog.empty() and self.current_queue_size < self.work_queue_size:
+            backlog_job = self.job_backlog.dequeue()
+            for i in range(len(self.job_queue)):
+                if self.job_queue[i] is None:
+                    self.job_queue[i] = backlog_job
+                    self.current_queue_size += 1
+                    break
+        
+        # Fill up the queue from the current simulation (if the backlog was not enough or empty)
+        while self.seq_idx < self.job_sequence_length and self.current_queue_size < self.work_queue_size:
+            new_job = self.work_sequences[self.seq_number, self.seq_idx]
+            if new_job is not None: # check if job is valid
+                new_job.set_enter_time(self.current_time)
+                for i in range(len(self.job_queue)):
+                    if self.job_queue[i] is None:
+                        self.job_queue[i] = new_job
+                        self.current_queue_size += 1
+                        break
+            self.seq_idx += 1
+
+        # Fill up the backlog from the simulation
+        while self.seq_idx < self.job_sequence_length:
+            new_job = self.work_sequences[self.seq_number, self.seq_idx]
+            if new_job is None: # check if job is valid
+                self.seq_idx += 1
+                continue
+            else:
+                new_job.set_enter_time(self.current_time)
+                if self.job_backlog.enqueue(new_job) == True:
+                    self.seq_idx += 1
+                else:
+                    break
     
     def print_work_seq(self):
         #for t in range(len(work_sequences))
@@ -149,7 +170,7 @@ class ResourceManagementEnv:
         for job in self.job_queue:
             if job is not None:
                 reward += self.hold_penalty / float(job.length)
-        reward += self.job_backlog.calc_panalty(self.dismiss_penalty)
+        #reward += self.job_backlog.calc_panalty(self.dismiss_penalty)
         return reward
 
 
@@ -186,11 +207,15 @@ class ResourceManagementEnv:
         """
         Resets the environment into it's initial state.
         """
+        self.current_queue_size = 0
         self.seq_idx = 0
         self.current_time = 0
         self.machine.reset()
         self.job_queue = np.full(self.work_queue_size, None)
         self.job_backlog = JobBacklog(self.backlog_size) 
+
+        # The queue and backlog should be filled up beforehand
+        self.fill_up_queue_and_backlog()
 
     def render(self):
         # TODO: improve rendering (axis labels, titles, etc)
@@ -258,16 +283,17 @@ class ResourceManagementEnv:
         column_iterator = 0
 
         for i in range(self.number_resources):
-            state[:, column_iterator: column_iterator + self.max_resource_slots] = self.machine.canvas[i, :, :] # 2x60x25
-            column_iterator += self.max_resource_slots
+            state[:, column_iterator] = self.machine.resource_slots - self.machine.available_slots[:, i] # 2x60x25
+            column_iterator += 1
 
             for j in range(self.work_queue_size):
 
                 if self.job_queue[j] is not None:  # fill in a block of work if valid
                     state[: self.job_queue[j].length, \
-                        column_iterator: column_iterator + self.job_queue[j].resource_vector[i]] = 1
+                        column_iterator] = self.job_queue[j].resource_vector[i]
+                column_iterator += 1
 
-                column_iterator += self.max_resource_slots
+                #column_iterator += self.max_resource_slots
 
         if self.job_backlog.num_jobs <= self.input_height:
             state[: self.job_backlog.num_jobs, column_iterator] = 1
@@ -334,6 +360,8 @@ class ResourceManagementEnv:
                     and job.finish_time <= self.current_time:
                     slowdowns_sum += ((job.finish_time - job.enter_time) / float(job.length))
                     finished_jobs_cnt += 1
+
+        if finished_jobs_cnt == 0: return 0
         return slowdowns_sum / float(finished_jobs_cnt)
     
     def get_average_completion_time(self):
@@ -348,6 +376,8 @@ class ResourceManagementEnv:
                     and job.finish_time <= self.current_time:
                     completion_times_sum += (job.finish_time - job.enter_time)
                     finished_jobs_cnt += 1
+
+        if finished_jobs_cnt == 0: return 0
         return completion_times_sum / float(finished_jobs_cnt)
 
     def get_queue_load(self):
