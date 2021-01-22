@@ -10,9 +10,9 @@ class Parameters:
         self.max_resource_slots = self.r        # max number of available resource slots per resource
         self.episode_max_length = 150           # maximum number of time steps in an episode
 
-        self.jobs_sequence_length = 70          # length of one sequence of jobs, this parameter control the environemnt load
+        self.jobs_sequence_length = 100         # length of one sequence of jobs, this parameter control the environemnt load
         self.simulation_length = 5              # number of job sequences, 100
-        self.job_rate = 0.60                    # probability for a new job to arrive
+        self.job_rate = 0.65                    # probability for a new job to arrive
         self.time_horizon = 20 * self.t         # number of observed time steps
         self.work_queue_size = 10               # maximum number of waiting jobs in the queue
         self.backlog_size = 60                  # size of backlog queue
@@ -26,7 +26,7 @@ class Parameters:
         self.gamma = 0.9                        # the gamma parameter for RMSProp
         self.eps = 1e-8                         # the eps parameter for RMSProp
 
-        self.number_episodes = 1000             # number of episodes
+        self.number_episodes = 3000             # number of episodes
         self.batch_size = 20                    # the batch size (MC simulation)
 
         # Network parameters

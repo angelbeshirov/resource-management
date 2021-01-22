@@ -26,7 +26,7 @@ import util
 np.set_printoptions(threshold=maxsize)
 
 class Neural_network:
-    def __init__(self, parameters, env, logger = Logger(LogLevel['info']), plot_freq = 5):
+    def __init__(self, parameters, env, logger = Logger(LogLevel['info'])):
         self.seed = 0
         self.number_episodes = parameters.number_episodes
         self.batch_size = parameters.batch_size
@@ -41,7 +41,6 @@ class Neural_network:
 
         self.env = env
         self.logger = logger
-        self.plot_freq = plot_freq # on how many iterations plot is updated; 0 means no plotting
 
         rng = random.PRNGKey(self.seed)
 
@@ -56,9 +55,9 @@ class Neural_network:
         self.input_shape = (-1, self.episode_max_length, self.input_height * self.input_width)
         self.output_shape, self.initial_params = self.initialize_params(rng, self.input_shape)
 
-        self.opt_init, self.opt_update, self.get_params = \
-            optimizers.rmsprop(step_size = self.learning_rate, gamma = self.gamma, eps = self.eps)
-            # optimizers.adam(step_size = self.learning_rate, b1 = self.b1, b2 = self.b2, eps = self.eps)
+        self.opt_init, self.opt_update, self.get_params = optimizers.adam(step_size = self.learning_rate)
+            # optimizers.rmsprop(step_size = self.learning_rate, gamma = self.gamma, eps = self.eps)
+            # optimizers.adam(step_size = self.learning_rate)
 
         self.opt_state = self.opt_init(self.initial_params)
         self.step = 0
@@ -72,33 +71,10 @@ class Neural_network:
         """
         return lmbda*jnp.sum(jnp.array([jnp.sum(jnp.abs(theta)**2) for theta in tree_flatten(params)[0] ]))
 
-    def pseudo_loss(self, params, trajectory_batch):
+    def pseudo_loss(self, params, batches):
         """
-        Define the pseudo loss function for policy gradient. 
-        
-        params: object(jax pytree):
-            parameters of the deep policy network.
-        trajectory_batch: tuple (states, actions, returns) containing the RL states, actions and returns (not the rewards!): 
-            states: np.array of size (batch_size, episode_max_length, input_height * input_width)
-            actions: np.array of size (batch_size, episode_max_length)
-            returns: np.array of size (batch_size, episode_max_length)
-        
-        Returns:
-            -J_{pseudo}(\theta)
-
+        Define the pseudo loss function for policy gradient.
         """
-        # extract data from the batch
-        states, actions, returns = trajectory_batch
-        # compute policy predictions
-        preds = self.predict_jax(params, states)
-        # combute the baseline
-        baseline = jnp.mean(returns, axis=0)
-        # select those values of the policy along the action trajectory
-        preds_select = jnp.take_along_axis(preds, jnp.expand_dims(actions, axis=2), axis=2).squeeze()
-        # return negative pseudo loss function (want to maximize reward with gradient Descent)
-        return -jnp.mean(jnp.sum(preds_select * (returns - baseline) )) + self.l2_regularizer(params, 0.001)
-
-    def pseudo_loss_multibatch(self, params, batches):
         loss = 0
         for batch in batches:
             states = batch["states"]
@@ -109,36 +85,22 @@ class Neural_network:
 
             baseline = jnp.mean(returns, axis=0)
             preds_select = jnp.take_along_axis(preds, jnp.expand_dims(actions, axis=2), axis=2).squeeze()
-            loss += (-jnp.mean(jnp.sum(preds_select * (returns - baseline)))) #+ self.l2_regularizer(params, 0.001))
-        return loss
+            loss += (-jnp.mean(jnp.sum(preds_select * (returns - baseline))))
 
-    def update_multibatch(self, batches):
-        current_params = self.get_params(self.opt_state)
-        loss, grad_params = value_and_grad(self.pseudo_loss_multibatch)(current_params, batches)
+        return loss + self.l2_regularizer(params, 0.001) # try to divide by len(batches)?
 
-        self.opt_state = self.opt_update(self.step, grad_params, self.opt_state)
-        self.step = self.step + 1
-        return loss
-
-
-    def update(self, batch):
+    def update(self, batches):
         """
-        Updates the neural network parameters.
-
         batch: np.array
-            batch containing the data used to update the model
+            batches containing the data used to update the model - N batches for each job sequence simulation
+            the parameters are updated for each simulation together
+            
+        Returns: loss
         """
-
-        # get current parameters of the model
         current_params = self.get_params(self.opt_state)
+        loss, grad_params = value_and_grad(self.pseudo_loss)(current_params, batches)
 
-        # compute gradients
-        loss, grad_params = value_and_grad(self.pseudo_loss)(current_params, batch)
-
-        # perform the update
         self.opt_state = self.opt_update(self.step, grad_params, self.opt_state)
-
-        # increment the step
         self.step = self.step + 1
         return loss
 
@@ -167,4 +129,3 @@ class Neural_network:
         params = pickle.load(file)
 
         self.opt_state = self.opt_init(params)
-

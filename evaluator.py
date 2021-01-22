@@ -18,6 +18,9 @@ class Evaluator:
         self.episode_max_length = parameters.episode_max_length
 
     def evaluate_dnn(self, agent, deterministic=False):
+        """
+        Evaluates the Deep Neural Network agent for the particular environment. 
+        """
         self.env.reset()
         total_reward = 0
         episode_length = self.episode_max_length
@@ -30,6 +33,7 @@ class Evaluator:
             
             action = np.argmax(pi_s) if deterministic else np.random.choice(self.env.actions, p = pi_s)
 
+            self.logger.debug("The agent chose action %d in time step %d" % (action, time_step))
             # take an environment step
             _ , reward, done, allocation = self.env.step(action)
             while allocation == True:
@@ -61,21 +65,17 @@ class Evaluator:
 
         for time_step in range(self.episode_max_length):          
             action = agent.predict(self.env.job_queue)
-            #util.print_job_sequence(self.logger, self.env.job_queue)
-            #self.logger.info("Action picked {}".format(action))
             # take an environment step
             _ , reward, done, allocation = self.env.step(action)
 
             while allocation == True:
                 action = agent.predict(self.env.job_queue)
-                #util.print_job_sequence(self.logger, self.env.job_queue)
-                #self.logger.info("Action picked {}".format(action))
                 _ , reward, done, allocation = self.env.step(action)
             
             total_reward += reward
 
             # If everything is executed the rest of the rewards will be 0
-            # which is exactly the expected behaviur since the environment
+            # which is exactly the expected behaviour since the environment
             # only returns negative rewards (-1/T_j)
             if done:
                 self.logger.info("No more jobs in the environment, everything is executed.")
@@ -91,22 +91,16 @@ class Evaluator:
         self.env.reset()
         total_reward = 0
         episode_length = self.episode_max_length
-        #util.print_job_sequence(self.logger, self.env.job_queue)
 
         self.logger.info("Evaluation of SJF agent started...")
 
         for time_step in range(self.episode_max_length):          
             action = agent.predict(self.env.job_queue)
-            #util.print_job_sequence(self.logger, self.env.job_queue)
-            #self.logger.info("Action picked {}".format(action))
 
             # take an environment step
             _ , reward, done, allocation = self.env.step(action)
-            
             while allocation == True:
                 action = agent.predict(self.env.job_queue)
-                #util.print_job_sequence(self.logger, self.env.job_queue)
-                #self.logger.info("Action picked {}".format(action))
                 _ , reward, done, allocation = self.env.step(action)
             
             total_reward += reward

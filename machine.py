@@ -10,7 +10,7 @@ class Machine:
         self.resource_slots = resource_slots     # number of slots per resource
         self.time_horizon = time_horizon         # number of observable time steps
 
-        self.running_jobs = [] # TODO: find the best structure for our problem (maybe list?)
+        self.running_jobs = []
         self.available_slots = np.full((time_horizon, number_resources), resource_slots)
 
         # graphical representation
@@ -107,7 +107,7 @@ class Machine:
         calculated by the formula:
         machine_load = (res_1_load + res_2_load + ... + res_n_load) / n,
         where n = number_resources and
-        res_i_load = (resource_slots - available_res_i_slots) / (time_horizon * resource_slots)
+        res_i_load = (initial_resource_slots - available_res_i_slots) / (time_horizon * resource_slots)
         """
         res_loads = [np.sum(self.resource_slots - self.available_slots[:, res]) / (self.time_horizon * self.resource_slots) \
             for res in range(self.number_resources)]

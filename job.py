@@ -35,9 +35,15 @@ class Job:
         Compares 2 jobs for equality.
         """
         return self.length == other.length and \
-            (self.resource_vector == other.resource_vector).all()
+            (self.resource_vector == other.resource_vector).all() \
+                and self.enter_time == other.enter_time and \
+                self.start_time == other.start_time and \
+                self.finish_time == other.finish_time
 
     def __str__(self):
+        """
+        Job to string.
+        """
         return self.to_string()
 
     def to_string(self):

@@ -25,39 +25,36 @@ class ResourceManagementEnv:
         self.current_time = 0       # current system time
         self.current_queue_size = 0 # current queue size
 
-        self.to_render = to_render
-        self.termination_type = termination_type
+        self.to_render = to_render  # for visualization
+        self.termination_type = termination_type # the termination type
 
-        self.job_sequence_length = parameters.jobs_sequence_length
-        self.simulation_length = parameters.simulation_length
-        self.number_resources = parameters.number_resources
-        self.input_height = parameters.input_height
-        self.input_width = parameters.input_width
-        self.max_resource_slots = parameters.max_resource_slots
-        self.work_queue_size = parameters.work_queue_size
-        self.backlog_size = parameters.backlog_size
-        self.time_horizon = parameters.time_horizon
+        self.job_sequence_length = parameters.jobs_sequence_length  # sequence of the job length
+        self.simulation_length = parameters.simulation_length       # number of sequences
+        self.number_resources = parameters.number_resources         # number of resources
+        self.input_height = parameters.input_height                 # input height
+        self.input_width = parameters.input_width                   # input width
+        self.max_resource_slots = parameters.max_resource_slots     # max resources slots of each resource
+        self.work_queue_size = parameters.work_queue_size           # size of the work queue
+        self.backlog_size = parameters.backlog_size                 # size of the backlog
+        self.time_horizon = parameters.time_horizon                 # time horizon (fixed time in the machine)
 
-        self.dismiss_penalty = parameters.dismiss_penalty
-        self.hold_penalty = parameters.hold_penalty
-        self.delay_penalty = parameters.delay_penalty
-        self.episode_max_length = parameters.episode_max_length
+        self.dismiss_penalty = parameters.dismiss_penalty           # dismiss penalty, used if we want to penalize the backlog jobs
+        self.hold_penalty = parameters.hold_penalty                 # hold penalty, used if we want to penalize the jobs in the queue
+        self.delay_penalty = parameters.delay_penalty               # delay penalty, used to penalize the jobs in the machine
+        self.episode_max_length = parameters.episode_max_length     # length of the episode
 
-        self.data_generator = DataGenerator(parameters)
-        self.job_queue = np.full(self.work_queue_size, None)
-        self.logger = logger
+        self.data_generator = DataGenerator(parameters)             # data generator for new sequences
+        self.job_queue = np.full(self.work_queue_size, None)        # job queue
+        self.logger = logger                                        # logger    
 
-        # TODO: Might be good to initialize all Objects by passing the parameters object in the constructor
-        # and then each object picks up whatever it needs from there
-        self.job_backlog = JobBacklog(parameters.backlog_size)
+        self.job_backlog = JobBacklog(parameters.backlog_size)      # size of the backlog
         self.machine = Machine(parameters.number_resources, \
             parameters.max_resource_slots,                  \
             parameters.time_horizon,
-            logger)
+            logger)                                                 # the machine
 
-        # Maybe generate 1 work_sequence for each episode?
-        self.work_sequences = self.generate_work_sequences() # Should this be generated each time?
-        self.actions = range(self.work_queue_size + 1) # +1 for the empty action
+        self.work_sequences = self.generate_work_sequences()        # work sequences
+        self.actions = range(self.work_queue_size + 1)              # actions which can be taken, 0-n-1 schedule job at that indes +1 for the empty action
 
     def step(self, action):
         """
@@ -99,15 +96,14 @@ class ResourceManagementEnv:
                 self.fill_up_queue_and_backlog()
         
         state = self.retrieve_state()
-         
-        #if done:
-        #    self.seq_number = (self.seq_number + 1) % self.simulation_length
-        #    self.reset()
         
         # we also need the allocation, because of the artificial pause of the time (allowing multiple actions to be taken at each timestep)
         return state, reward, done, allocation 
 
     def next_jobset(self):
+        """
+        Go to the next job sequence.
+        """
         self.seq_number = (self.seq_number + 1) % self.simulation_length
 
     def fill_up_queue_and_backlog(self):
@@ -150,8 +146,10 @@ class ResourceManagementEnv:
                 else:
                     break
     
-    def print_work_seq(self):
-        #for t in range(len(work_sequences))
+    def print_work_sequence(self):
+        """
+        Print the current work sequence.
+        """
         for x in self.work_sequences:
             for job in x:
                 if job is not None:
@@ -170,16 +168,20 @@ class ResourceManagementEnv:
         for job in self.job_queue:
             if job is not None:
                 reward += self.hold_penalty / float(job.length)
-        #reward += self.job_backlog.calc_panalty(self.dismiss_penalty)
+        reward += self.job_backlog.calc_panalty(self.dismiss_penalty) # uncomment to add the reward from the backlog
         return reward
 
 
     def reward_completion(self):
+        """
+        Reward to optimize for completion time. -|J|, where J is the 
+        jobs currently in the system.
+        """
         reward = len(self.machine.running_jobs)
         for job in self.job_queue:
             if job is not None:
                 reward += 1
-        reward += self.job_backlog.num_jobs
+        reward += self.job_backlog.num_jobs # uncomment to add the reward from the backlog
 
         return -reward
 
@@ -218,9 +220,11 @@ class ResourceManagementEnv:
         self.fill_up_queue_and_backlog()
 
     def render(self):
-        # TODO: improve rendering (axis labels, titles, etc)
+        """
+        Renders the state of the environment. Representing the cluster, the queue and the backlog.
+        """
         rows = self.machine.number_resources
-        cols = len(self.job_queue) + 1 + 1 # in one row display current resource, queue slots
+        cols = len(self.job_queue) + 1 + 1 # display machine, the queue and the backlog
 
         idx = 1
 
@@ -228,6 +232,7 @@ class ResourceManagementEnv:
             plt.subplot(rows, cols, idx)
             idx += 1
             # display machine
+            plt.title('Cluster')
             plt.xlabel('resource slots')
             plt.ylabel('time')
             plt.imshow(self.machine.canvas[i, :, :], interpolation='nearest', vmax=1)
@@ -242,11 +247,12 @@ class ResourceManagementEnv:
                 idx += 1
                 plt.imshow(slot_grid, interpolation='nearest', vmax=1)
             if i == 0: # show backlog only on the first line
-                backlog_grid = np.zeros((self.job_backlog.size, 1))
+                backlog_grid = np.zeros((self.job_backlog.size, 5))
                 for b in range(self.job_backlog.num_jobs):
-                    backlog_grid[b, 0] = 1
+                    backlog_grid[b, :] = 1
                 plt.subplot(rows, cols, idx)
                 plt.title('Backlog')
+                plt.xticks([])
                 plt.imshow(backlog_grid, interpolation='nearest', vmax=1)
             idx += 1
         plt.show()
@@ -269,7 +275,6 @@ class ResourceManagementEnv:
                     counter = counter + 1
         return work_sequences
 
-    # Current state shape is: 60x301
     def retrieve_state(self):
         """
         Construct the state of the environment, used as input to the neural network policy during training.
@@ -293,9 +298,7 @@ class ResourceManagementEnv:
                         column_iterator] = self.job_queue[j].resource_vector[i]
                 column_iterator += 1
 
-                #column_iterator += self.max_resource_slots
-
-        if self.job_backlog.num_jobs <= self.input_height:
+        if self.job_backlog.num_jobs <= self.input_height: # observe the backlog
             state[: self.job_backlog.num_jobs, column_iterator] = 1
             column_iterator += backlog_width
         else:
@@ -309,44 +312,47 @@ class ResourceManagementEnv:
         return state.flatten()
 
     def retrieve_compact_state(self):
-            state = np.zeros(self.time_horizon * (self.number_resources + 1) + self.work_queue_size * (self.number_resources + 1) + 1)
+        """
+        Compact form of the state. Not very useful, but still can be experimented with further.
+        """
+        state = np.zeros(self.time_horizon * (self.number_resources + 1) + self.work_queue_size * (self.number_resources + 1) + 1)
 
-            iterator = 0
+        iterator = 0
 
-            # current work reward, after each time step, how many jobs left in the machine
-            job_allocated = np.ones(self.time_horizon) * len(self.machine.running_jobs)
-            for j in self.machine.running_jobs:
-                job_allocated[j.finish_time - self.current_time: ] -= 1
+        # current work reward, after each time step, how many jobs left in the machine
+        job_allocated = np.ones(self.time_horizon) * len(self.machine.running_jobs)
+        for j in self.machine.running_jobs:
+            job_allocated[j.finish_time - self.current_time: ] -= 1
 
-            state[iterator: iterator + self.time_horizon] = job_allocated
+        state[iterator: iterator + self.time_horizon] = job_allocated
+        iterator += self.time_horizon
+
+        # current work available slots
+        for i in range(self.number_resources):
+            state[iterator: iterator + self.time_horizon] = self.machine.available_slots[:, i]
             iterator += self.time_horizon
 
-            # current work available slots
-            for i in range(self.number_resources):
-                state[iterator: iterator + self.time_horizon] = self.machine.available_slots[:, i]
-                iterator += self.time_horizon
+        # new work duration and size
+        for i in range(self.work_queue_size):
 
-            # new work duration and size
-            for i in range(self.work_queue_size):
+            if self.job_queue[i] is None:
+                state[iterator: iterator + self.number_resources + 1] = 0
+                iterator += self.number_resources + 1
+            else:
+                state[iterator] = self.job_queue[i].length
+                iterator += 1
 
-                if self.job_queue[i] is None:
-                    state[iterator: iterator + self.number_resources + 1] = 0
-                    iterator += self.number_resources + 1
-                else:
-                    state[iterator] = self.job_queue[i].length
+                for j in range(self.number_resources):
+                    state[iterator] = self.job_queue[i].resource_vector[j]
                     iterator += 1
 
-                    for j in range(self.number_resources):
-                        state[iterator] = self.job_queue[i].resource_vector[j]
-                        iterator += 1
+        # backlog queue
+        state[iterator] = self.job_backlog.num_jobs
+        iterator += 1
 
-            # backlog queue
-            state[iterator] = self.job_backlog.num_jobs
-            iterator += 1
+        assert iterator == len(state)  # fill up the compact representation vector
 
-            assert iterator == len(state)  # fill up the compact representation vector
-
-            return state
+        return state
 
     def get_average_slowdown(self):
         """

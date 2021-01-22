@@ -15,17 +15,23 @@ import jax
 import util
 
 class Trainer:
+    """
+    Does the neural network training based on multiple job sequences.
+    """
 
-    def __init__(self, parameters, logger = Logger(LogLevel['info'])):
+    def __init__(self, parameters, logger = Logger(LogLevel['info']), plot_freq = 1):
         self.parameters = parameters
         self.logger = logger
         self.number_episodes = parameters.number_episodes
+        self.plot_freq = plot_freq
 
-    def train_subroutine(self, nn, parameters, data, seq_number, result):
+    def train_sequence(self, nn, parameters, data, seq_number, result):
+        """
+        Retrieves MC samples for a single job sequence.
+        """
         env = nn.env
         env.work_sequences = data
         env.seq_number = seq_number
-        env.reset()
 
         states = np.zeros((parameters.batch_size, parameters.episode_max_length, parameters.input_height * parameters.input_width), dtype=np.float32)
         actions = np.zeros((parameters.batch_size, parameters.episode_max_length), dtype=np.int)
@@ -35,12 +41,12 @@ class Trainer:
         avg_completion_times = np.zeros(parameters.batch_size, dtype=np.float32)
         system_loads = np.zeros(parameters.batch_size, dtype=np.float32)
 
-        # get current policy  network params
+        # get current policy network params
         current_params = nn.get_params(nn.opt_state)
 
         for j in range(parameters.batch_size):
+            self.logger.debug("Monte carlo simulation %d started for seq %d" % (j, seq_number))
             
-            self.logger.debug("Monte carlo simulation %d started in thread for seq %d" % (j, seq_number))
             # reset environment to the initial state
             env.reset()
         
@@ -58,7 +64,9 @@ class Trainer:
                 action = np.random.choice(env.actions, p = pi_s)
                 actions[j, time_step] = action
                 
-                # take an environment step
+                # take an environment step, time is frozen until the agent picks
+                # an invalid action or the empty (void) action. The last reward is 
+                # taken into consideration (no rewards for intermediate steps)
                 _, reward, done, allocation = env.step(action)
                 while allocation == True:
                     state = env.retrieve_state()
@@ -66,15 +74,15 @@ class Trainer:
                     action = np.random.choice(env.actions, p = pi_s)
                     _ , reward, done, allocation = env.step(action)
 
+                # store reward
+                rewards[time_step] = reward
+
                 # If everything is executed the rest of the rewards will be 0
                 # which is exactly the expected behaviour since the environment
                 # only returns negative rewards (-1/T_j)
                 if done:
                     self.logger.info("No more jobs in the environment, everything is executed.")
                     break
-
-                # store reward
-                rewards[time_step] = reward
                 
             # compute reward-to-go 
             # e.g. rewards = 1 2 3 4
@@ -108,38 +116,40 @@ class Trainer:
     #   end
     # end
     # θ ← θ + ∆θ % batch parameter update
-    def train_test(self):
-        
+    def train(self):
+        # Some additional raw file logging
         f = open("logs/test_log" + time.strftime("%Y%m%d-%H%M%S") + ".txt", "a")
         f.write("episode,loss,total_reward,mean_reward,return_standard_deviation,min_return,max_return,ajs,ajc\n")
 
-        best_reward = -maxsize
-        best_slowdown = maxsize
+        best_reward = -maxsize   # get the max value
+        best_slowdown = maxsize  # get the min value
         env = ResourceManagementEnv(self.parameters, self.logger, to_render=False, termination_type=TerminationType.AllJobsDone)
         simulation_length = self.parameters.simulation_length
-        data = env.generate_work_sequences() # should be generated from outside the environment and each job_sequence should be passed to the respected env
-        self.serialize_data(data)
+        data = env.generate_work_sequences()
+
+        self.serialize_data(data) # Remove later on (debuggin)
+
         nn = Neural_network(self.parameters, env, self.logger)
 
         _, axs = plt.subplots(2, 3, figsize=(16,10))
 
         self.logger.info("Starting training")
 
-        # mean reward at the end of the episode
+        # mean reward at the end of the episode for all job sequences
         mean_final_reward = np.zeros(self.number_episodes, dtype=np.float32)
-        # total reward at the end of the episode
+        # total reward at the end of the episode for all job sequences
         total_final_reward = np.zeros_like(mean_final_reward)
-        # standard deviation of the reward at the end of the episode
+        # standard deviation of the reward at the end of the episode for all job sequences
         std_final_reward = np.zeros_like(mean_final_reward)
-        # batch minimum at the end of the episode
-        min_final_reward = np.zeros_like(mean_final_reward)
-        # batch maximum at the end of the episode
+        # batch minimum at the end of the episode for all job sequences
+        min_final_reward = np.zeros_like(mean_final_reward) 
+        # batch maximum at the end of the episodefor all job sequences
         max_final_reward = np.zeros_like(mean_final_reward)
-        # average slowdown at the end of the episode (slowdown = Sum -1/T_j (T_j = duration of jobs in the system))
+        # average slowdown at the end of the episode (slowdown = Sum -1/T_j (T_j = duration of jobs in the system)) for all job sequences
         mean_avg_slowdowns = np.zeros_like(mean_final_reward)
-        # average completion time at the end of the episode (completion_time = finish_time - enter_time)
+        # average completion time at the end of the episode (completion_time = finish_time - enter_time) for all job sequences
         mean_avg_completion_times = np.zeros_like(mean_final_reward)
-        # average system load at the end of episode
+        # average system load at the end of episode for all job sequences
         avg_system_loads = np.zeros_like(mean_final_reward)
 
         losses = []
@@ -151,9 +161,9 @@ class Trainer:
             result = []
 
             for s in range(simulation_length):
-                self.train_subroutine(nn, self.parameters, data, indices[s], result)
+                self.train_sequence(nn, self.parameters, data, indices[s], result)
 
-            loss = nn.update_multibatch(result)
+            loss = nn.update(result)
             losses.append(loss)
             ### record time needed for a single epoch
             episode_time = time.time() - start_time
@@ -180,8 +190,6 @@ class Trainer:
                 nn.save("./models/best_model_slowdown_" + time.strftime("%Y%m%d-%H%M%S") + ".pkl")
                 best_slowdown = mean_avg_slowdowns[episode]
 
-            # # print results every 10 epochs
-            # #if episode % 5 == 0:
             self.logger.info("episode {} in {:0.2f} sec".format(episode, episode_time))
             self.logger.info("loss: {:0.4f}".format(loss))
             self.logger.info("total reward: {:0.4f}".format(total_final_reward[episode]))
@@ -194,7 +202,7 @@ class Trainer:
                 .format(episode,loss,total_final_reward[episode],mean_final_reward[episode],std_final_reward[episode],\
                     min_final_reward[episode],max_final_reward[episode],mean_avg_slowdowns[episode],mean_avg_completion_times[episode]))
 
-            if nn.plot_freq > 0 and episode % nn.plot_freq == 0:
+            if self.plot_freq > 0 and episode % self.plot_freq == 0:
                 episode_seq = np.arange(episode + 1)
                 util.plot_total_rewards(axs[0,0], episode_seq, total_final_reward, best_reward)
                 util.plot_losses(axs[0,1], episode_seq, losses)
