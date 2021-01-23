@@ -13,50 +13,56 @@ from trainer import Trainer
 from evaluator import Evaluator
 from specific_agents import PackerAgent, SJFAgent
 
+import copy
+
 def main():
     np.set_printoptions(precision=5)
     parameters = Parameters()
 
+    # parameters used for starting this class from shell scripts and executing different flows with different paremeters
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-t", "--train", action="store_true", help="If true the training starts.")
     parser.add_argument("-l", "--loglevel", type=str, default="info", choices=['debug', 'info'], help="Log level to be used.")
-    parser.add_argument("-ea", "--evaluateall", action="store_true", help="If evaluateall is true, all agents will be evaluated based on the system objectives.")
+    parser.add_argument("-e", "--evaluate", action="store_true", help="If evaluate is true, all agents will be evaluated based on the system objectives.")
+    parser.add_argument("-m", "--model", type=str, default="models/best_slowdown_model.pkl", help="Model which you want to evaluate.")
     args = parser.parse_args()
-
-    # if args.train:
-        # logger = Logger(LogLevel[args.loglevel])
-        # env = ResourceManagementEnv(parameters, logger, to_render=False, termination_type=TerminationType.AllJobsDone)
-        # neural_net = Neural_network(parameters, env, logger)
-        # neural_net.train()
     logger = Logger(LogLevel[args.loglevel])
+
     if args.train:
-        trainer = Trainer(parameters, logger) # does the multiseq training
-        trainer.train_test()
-    elif args.evaluateall:
-        util.generate_sequence_and_save(parameters)
-        test_sequence = util.retrieve_test_data()
+        trainer = Trainer(parameters, logger)
+        trainer.train()
+    elif args.evaluate:
+        #util.generate_sequence_and_save(parameters) # Generates a new random sequence and saves it
+        test_sequence = util.retrieve_test_data()    # Retrieves the saved sequence for evaluation (save for results reproducity)
         env = ResourceManagementEnv(parameters, logger, to_render=False, termination_type=TerminationType.AllJobsDone)
 
-        # Set env parameters
-        env.work_sequences = test_sequence
-        env.simulation_length = 1
+        env.work_sequences = copy.deepcopy(test_sequence)
+        env.simulation_length = test_sequence.shape[0]
         env.job_sequence_length = test_sequence.shape[1]
+        env.seq_number = 0
 
-        #print("Work to be tested against is:")
-        #util.print_job_sequence(logger, test_sequence[0])
-
-        # Run the evaluation
+        # Run the actual evaluation
         nn = Neural_network(parameters, env, logger)
-        nn.load('./best_model_slowdown.pkl')
+        nn.load(args.model)
 
         packer = PackerAgent(parameters, env, logger)
         sjf = SJFAgent(parameters, env, logger)
 
         evaluator = Evaluator(parameters, env, logger)
 
-        evaluator.evaluate_dnn(nn, deterministic=False)
-        evaluator.evaluate_packer(packer)
-        evaluator.evaluate_sjf(sjf)
+        # evaluate the RL agent
+        dnnsl = evaluator.evaluate_dnn(nn, deterministic=True)
+
+        # evaluate packer
+        env.work_sequences = copy.deepcopy(test_sequence)
+        packersl = evaluator.evaluate_packer(packer)
+
+        # evaluate SJF
+        env.work_sequences = copy.deepcopy(test_sequence)
+        sjfsl = evaluator.evaluate_sjf(sjf)
+
+        # create barplot of the results.
+        util.create_slowdown_bar([dnnsl, packersl, sjfsl])
 
 if __name__ == '__main__':
     main()

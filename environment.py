@@ -396,4 +396,7 @@ class ResourceManagementEnv:
         return np.mean([1 if job is not None else 0 for job in self.job_queue])
 
     def get_load(self):
+        """
+        Returns the overall load of the environement, that is the queue load + machine load.
+        """
         return self.get_queue_load() + self.machine.get_load()

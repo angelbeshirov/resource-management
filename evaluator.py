@@ -21,8 +21,8 @@ class Evaluator:
         """
         Evaluates the Deep Neural Network agent for the particular environment. 
         """
+        self.env.seq_number = 0
         self.env.reset()
-        total_reward = 0
         episode_length = self.episode_max_length
 
         self.logger.info("Evaluation of DNN agent started...")
@@ -32,33 +32,29 @@ class Evaluator:
             pi_s = np.exp(agent.predict(state))
             
             action = np.argmax(pi_s) if deterministic else np.random.choice(self.env.actions, p = pi_s)
-
-            self.logger.debug("The agent chose action %d in time step %d" % (action, time_step))
             # take an environment step
-            _ , reward, done, allocation = self.env.step(action)
-            while allocation == True:
+            _, _, done, allocation = self.env.step(action)
+            
+            while allocation == True: # freeze time
+                state = self.env.retrieve_state()
                 pi_s = np.exp(agent.predict(state))
                 action = np.argmax(pi_s) if deterministic else np.random.choice(self.env.actions, p = pi_s)
-                _ , reward, done, allocation = self.env.step(action)
-            
-            total_reward += reward
+                _ , _, done, allocation = self.env.step(action)
 
-            # If everything is executed the rest of the rewards will be 0
-            # which is exactly the expected behaviur since the environment
-            # only returns negative rewards (-1/T_j)
             if done:
                 self.logger.info("No more jobs in the environment, everything is executed.")
                 episode_length = time_step
                 break
         
-
+        slowdown = self.env.get_average_slowdown()
         self.logger.info("Evaluation completed in {} timesteps.".format(episode_length))
-        self.logger.info("Total reward is {}.".format(total_reward))
-        self.logger.info("Average slowdown is {:.4f}".format(self.env.get_average_slowdown()))
+        self.logger.info("Final reward is {:.4f}.".format(self.env.reward()))
+        self.logger.info("Average slowdown is {:.4f}".format(slowdown))
+
+        return slowdown
 
     def evaluate_packer(self, agent):
         self.env.reset()
-        total_reward = 0
         episode_length = self.episode_max_length
 
         self.logger.info("Evaluation of packer agent started...")
@@ -66,30 +62,26 @@ class Evaluator:
         for time_step in range(self.episode_max_length):          
             action = agent.predict(self.env.job_queue)
             # take an environment step
-            _ , reward, done, allocation = self.env.step(action)
+            _ , _, done, allocation = self.env.step(action)
 
-            while allocation == True:
+            while allocation == True: # freeze time
                 action = agent.predict(self.env.job_queue)
-                _ , reward, done, allocation = self.env.step(action)
-            
-            total_reward += reward
+                _ , _, done, allocation = self.env.step(action)
 
-            # If everything is executed the rest of the rewards will be 0
-            # which is exactly the expected behaviour since the environment
-            # only returns negative rewards (-1/T_j)
             if done:
                 self.logger.info("No more jobs in the environment, everything is executed.")
                 episode_length = time_step
                 break
         
-
+        slowdown = self.env.get_average_slowdown()
         self.logger.info("Evaluation completed in {} timesteps.".format(episode_length))
-        self.logger.info("Total reward is {}.".format(total_reward))
-        self.logger.info("Average slowdown is {:.4f}".format(self.env.get_average_slowdown()))
+        self.logger.info("Final reward is {:.4f}.".format(self.env.reward()))
+        self.logger.info("Average slowdown is {:.4f}".format(slowdown))
+
+        return slowdown
 
     def evaluate_sjf(self, agent):
         self.env.reset()
-        total_reward = 0
         episode_length = self.episode_max_length
 
         self.logger.info("Evaluation of SJF agent started...")
@@ -98,23 +90,20 @@ class Evaluator:
             action = agent.predict(self.env.job_queue)
 
             # take an environment step
-            _ , reward, done, allocation = self.env.step(action)
-            while allocation == True:
+            _ , _, done, allocation = self.env.step(action)
+            while allocation == True: # freeze time
                 action = agent.predict(self.env.job_queue)
-                _ , reward, done, allocation = self.env.step(action)
-            
-            total_reward += reward
+                _ , _, done, allocation = self.env.step(action)
 
-            # If everything is executed the rest of the rewards will be 0
-            # which is exactly the expected behaviur since the environment
-            # only returns negative rewards (-1/T_j)
             if done:
                 self.logger.info("No more jobs in the environment, everything is executed.")
                 episode_length = time_step
                 break
         
-
+        slowdown = self.env.get_average_slowdown()
         self.logger.info("Evaluation completed in {} timesteps.".format(episode_length))
-        self.logger.info("Total reward is {}.".format(total_reward))
-        self.logger.info("Average slowdown is {:.4f}".format(self.env.get_average_slowdown()))
+        self.logger.info("Final reward is {:.4f}.".format(self.env.reward()))
+        self.logger.info("Average slowdown is {:.4f}".format(slowdown))
+
+        return slowdown
 

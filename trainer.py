@@ -13,6 +13,7 @@ import random
 import jax.numpy as jnp
 import jax
 import util
+import copy
 
 class Trainer:
     """
@@ -127,8 +128,6 @@ class Trainer:
         simulation_length = self.parameters.simulation_length
         data = env.generate_work_sequences()
 
-        self.serialize_data(data) # Remove later on (debuggin)
-
         nn = Neural_network(self.parameters, env, self.logger)
 
         _, axs = plt.subplots(2, 3, figsize=(16,10))
@@ -143,7 +142,7 @@ class Trainer:
         std_final_reward = np.zeros_like(mean_final_reward)
         # batch minimum at the end of the episode for all job sequences
         min_final_reward = np.zeros_like(mean_final_reward) 
-        # batch maximum at the end of the episodefor all job sequences
+        # batch maximum at the end of the episode for all job sequences
         max_final_reward = np.zeros_like(mean_final_reward)
         # average slowdown at the end of the episode (slowdown = Sum -1/T_j (T_j = duration of jobs in the system)) for all job sequences
         mean_avg_slowdowns = np.zeros_like(mean_final_reward)
@@ -159,9 +158,10 @@ class Trainer:
             indices = list(range(simulation_length))
             np.random.shuffle(indices)
             result = []
+            copy_data = copy.deepcopy(data)
 
             for s in range(simulation_length):
-                self.train_sequence(nn, self.parameters, data, indices[s], result)
+                self.train_sequence(nn, self.parameters, copy_data, indices[s], result)
 
             loss = nn.update(result)
             losses.append(loss)
@@ -211,14 +211,4 @@ class Trainer:
                 util.plot_avg_completion_time(axs[1,1], episode_seq, mean_avg_completion_times)
                 util.plot_system_load(axs[1,2], episode_seq, avg_system_loads)
                 plt.pause(0.05)
-        f.close()
-
-    def serialize_data(self, data):
-        f = open("data/train_data" + time.strftime("%Y%m%d-%H%M%S") + ".txt", "a")
-        for seq in data:
-            for job in seq:
-                if job is not None:
-                    f.write("|{},{}|,".format(job.length, np.array2string(job.resource_vector)))
-                else: f.write("None,")
-            f.write("\n")
         f.close()

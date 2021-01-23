@@ -115,17 +115,15 @@ class Neural_network:
         """
         Saves the model parameters into the specified file.
         """
-        trained_params = self.get_params(self.opt_state)
         file = open(path, 'wb')
-        pickle.dump(trained_params, file, -1)
+        pickle.dump(optimizers.unpack_optimizer_state(self.opt_state), file, -1)
         file.close()
 
     def load(self, path):
         """
         Loads the model parameters from the specified file.
         """
-        self.logger.info("Loading model from %s" % (path))
         file = open(path, 'rb')
-        params = pickle.load(file)
+        state = pickle.load(file)
 
-        self.opt_state = self.opt_init(params)
+        self.opt_state = optimizers.pack_optimizer_state(state)

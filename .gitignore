@@ -133,4 +133,5 @@ dmypy.json
 
 data/
 logs/
-models/
+test_models/
+evaluate/

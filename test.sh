@@ -3,5 +3,5 @@
 loglevel="info"
 
 python runner.py \
-        --evaluateall \
+        --evaluate \
         --loglevel=$loglevel
