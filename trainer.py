@@ -14,6 +14,7 @@ import jax.numpy as jnp
 import jax
 import util
 import copy
+import os
 
 class Trainer:
     """
@@ -118,8 +119,11 @@ class Trainer:
     # end
     # θ ← θ + ∆θ % batch parameter update
     def train(self):
+        if not os.path.exists('./logs'):
+            os.makedirs('./logs')
+
         # Some additional raw file logging
-        f = open("logs/test_log" + time.strftime("%Y%m%d-%H%M%S") + ".txt", "a")
+        f = open("logs/log" + time.strftime("%Y%m%d-%H%M%S") + ".txt", "a")
         f.write("episode,loss,total_reward,mean_reward,return_standard_deviation,min_return,max_return,ajs,ajc\n")
 
         best_reward = -maxsize   # get the max value

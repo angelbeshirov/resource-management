@@ -130,7 +130,7 @@ dmypy.json
 
 # vscode config
 .vscode/
-
+models/
 data/
 logs/
 test_models/
