@@ -39,7 +39,7 @@ class Parameters:
               self.work_queue_size) * self.number_resources + self.backlog_width # the network input width
 
         # input height  width for the compact state
-        #self.input_height = 1
-        #self.input_width = self.time_horizon * (self.number_resources + 1) + self.work_queue_size * (self.number_resources + 1) + 1
+        self.input_height_cmpct = 1
+        self.input_width_cmpct = self.time_horizon * (self.number_resources + 1) + self.work_queue_size * (self.number_resources + 1) + 1
 
         self.network_output_dim = self.work_queue_size + 1 # the output dimension from the policy (work_queue_size + 1, 1)
